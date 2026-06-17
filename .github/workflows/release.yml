@@ -68,7 +68,8 @@ jobs:
         run: |
           sudo add-apt-repository -y ppa:strukturag/libheif
           sudo apt-get update
-          sudo apt-get install -y libheif-dev
+          # libheif 的 pkg-config 传递依赖：libsharpyuv（libwebp）、libde265（HEVC 解码）
+          sudo apt-get install -y libheif-dev libsharpyuv-dev libde265-dev
       - name: Build
         shell: bash
         run: |
@@ -145,11 +146,22 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - name: Collect assets
+      - name: Bundle (program + config + static files) per platform
         run: |
-          mkdir release
-          find artifacts -name '*.tar.gz' -exec cp {} release/ \;
-          ls -la release
+          set -eux
+          mkdir -p webdist out
+          # 静态文件解一次，复用到每个平台包
+          tar xzf artifacts/web-dist/afilmory-lite-web-dist.tar.gz -C webdist
+          for dir in artifacts/bin-*/; do
+            target="${dir#artifacts/bin-}"; target="${target%/}"
+            rm -rf stage && mkdir -p stage
+            tar xzf "$dir"/*.tar.gz -C stage          # → stage/afilmory-lite-<target>/{二进制, afilmory.example.toml}
+            pkg="stage/afilmory-lite-$target"
+            mkdir -p "$pkg/web/dist"
+            cp -r webdist/. "$pkg/web/dist/"          # 加入 SPA 静态文件
+            tar czf "out/afilmory-lite-$target.tar.gz" -C stage "afilmory-lite-$target"
+          done
+          ls -la out
       - uses: softprops/action-gh-release@v2
         with:
-          files: release/*.tar.gz
+          files: out/*.tar.gz
