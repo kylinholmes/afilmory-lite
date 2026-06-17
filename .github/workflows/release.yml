@@ -44,7 +44,6 @@ jobs:
           # aarch64 为交叉编译、拿不到 arm64 的 PPA 库，故不含 HEIC。
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, features: heic }
           - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest }
-          - { target: x86_64-apple-darwin, os: macos-13 }
           - { target: aarch64-apple-darwin, os: macos-14 }
           - { target: x86_64-pc-windows-msvc, os: windows-latest }
     runs-on: ${{ matrix.os }}
