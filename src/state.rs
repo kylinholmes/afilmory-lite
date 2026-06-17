@@ -46,17 +46,31 @@ pub struct AppState {
     pub builder: Arc<Builder>,
     pub manifest: Arc<RwLock<AfilmoryManifest>>,
     pub status: Arc<RwLock<BuildStatus>>,
+    /// 本地存储时托管原图：(URL 前缀, 原图根目录)。S3 等远程存储为 None（原图直连桶/CDN）。
+    pub originals: Option<(String, std::path::PathBuf)>,
 }
 
 impl AppState {
     pub fn new(config: Config) -> Result<Self> {
         let builder = Builder::from_config(config.clone())?;
         let manifest = load_manifest(builder.manifest_path())?;
+        // 本地存储且 base_url 为根路径（如 "/photos"）时，由本服务托管原图
+        let originals = match &config.storage {
+            crate::config::StorageConfig::Local {
+                base_path,
+                base_url: Some(u),
+                ..
+            } if u.starts_with('/') => {
+                Some((u.trim_end_matches('/').to_string(), base_path.clone()))
+            }
+            _ => None,
+        };
         Ok(Self {
             config: Arc::new(config),
             builder: Arc::new(builder),
             manifest: Arc::new(RwLock::new(manifest)),
             status: Arc::new(RwLock::new(BuildStatus::default())),
+            originals,
         })
     }
 

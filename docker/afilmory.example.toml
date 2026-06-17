@@ -12,9 +12,8 @@ title = "Afilmory Lite"
 description = "Photo gallery served by afilmory-lite"
 accent_color = "#007bff"
 
-# M1b 当前可用：本地目录（把照片挂到 /app/photos）。
-# 注意：本地 provider 的「原图」URL 为 /photos/<key>，当前 server 尚未路由 /photos，
-#       因此本地模式下缩略图可显示、点开看原图需等 S3(M2) 或后续补 /photos 路由。
+# 本地目录（把照片挂到 /app/photos）。
+# base_url 设为根路径（如 /photos）时，本服务会在该前缀下托管原图（缩略图走 /thumbnails）。
 [storage]
 provider = "local"
 base_path = "/app/photos"

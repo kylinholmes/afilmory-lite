@@ -17,16 +17,28 @@ const NO_CACHE: &str = "no-cache";
 
 /// 构建 serve 路由：dist 静态资源、缩略图、触发 API、以及 SPA fallback（注入首页）。
 pub fn build_router(state: AppState, coord: BuildCoordinator) -> Router {
-    Router::new()
+    let mut router = Router::new()
         .route("/static/web/{*path}", get(serve_static))
         .route("/thumbnails/{*path}", get(serve_thumbnail))
         .route("/api/status", get(api_status))
         .route("/api/admin/build", post(api_admin_build))
         .route("/api/hooks/build", post(api_hook_build))
-        .route("/api/hooks/s3", post(api_hook_s3))
+        .route("/api/hooks/s3", post(api_hook_s3));
+    // 本地存储：按 base_url 前缀托管原图（S3 的 originalUrl 直连桶/CDN，无需本服务）
+    if let Some((prefix, _dir)) = &state.originals {
+        router = router.route(&format!("{prefix}/{{*path}}"), get(serve_original));
+    }
+    router
         .fallback(spa_fallback)
         .layer(Extension(coord))
         .with_state(state)
+}
+
+async fn serve_original(State(st): State<AppState>, AxPath(path): AxPath<String>) -> Response {
+    match &st.originals {
+        Some((_, dir)) => serve_file(dir, &path).await,
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 // ---- 静态资源 / 首页注入 ----
@@ -212,6 +224,7 @@ mod tests {
         .unwrap();
         std::fs::write(dist.join("assets/app.js"), b"console.log(1)").unwrap();
         std::fs::write(work.join("thumbnails/x.jpg"), b"jpgdata").unwrap();
+        std::fs::write(photos.join("orig.jpg"), b"jpegdata").unwrap();
         let triggers = match token {
             Some(t) => format!("[triggers]\nwebhook_token = \"{t}\"\nenable_s3_event = true\n"),
             None => String::new(),
@@ -228,6 +241,7 @@ mod tests {
             [storage]
             provider = "local"
             base_path = "{photos}"
+            base_url = "/photos"
             {triggers}
         "#,
             work = work.display(),
@@ -381,6 +395,35 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/api/hooks/build")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn serves_local_originals() {
+        // 本地存储 base_url="/photos" → 原图经 /photos/* 托管
+        let (_dir, state) = setup(None);
+        let coord = BuildCoordinator::start(state.clone());
+        let app = build_router(state, coord);
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/photos/orig.jpg")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/photos/missing.jpg")
                     .body(Body::empty())
                     .unwrap(),
             )
