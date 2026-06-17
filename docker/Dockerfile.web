@@ -4,7 +4,7 @@
 # Rust 二进制不在这里编译 —— 由 GitHub Action 跨平台构建（见 .github/workflows/release.yml）。
 #
 # 本地导出到 ./web-dist：
-#   DOCKER_BUILDKIT=1 docker build -f Dockerfile.web --target export \
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.web --target export \
 #     --build-arg AFILMORY_REF=main \
 #     --output type=local,dest=./web-dist .
 # 或直接用脚本： scripts/build-web.sh

@@ -24,7 +24,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - name: Build SPA shell (Docker)
         run: |
-          docker build -f Dockerfile.web --target export \
+          docker build -f docker/Dockerfile.web --target export \
             --build-arg AFILMORY_REF="${{ github.event.inputs.afilmory_ref || 'main' }}" \
             --output type=local,dest=web-dist .
       - name: Archive dist
@@ -111,7 +111,7 @@ jobs:
           tar xzf artifacts/bin-aarch64-unknown-linux-gnu/afilmory-lite-aarch64-unknown-linux-gnu.tar.gz -C /tmp
           cp /tmp/afilmory-lite-aarch64-unknown-linux-gnu/afilmory-lite ctx/bin/afilmory-lite-arm64
           cp docker/afilmory.example.toml ctx/afilmory.toml
-          cp Dockerfile.runtime ctx/Dockerfile
+          cp docker/Dockerfile.runtime ctx/Dockerfile
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3

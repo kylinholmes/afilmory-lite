@@ -27,10 +27,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-echo ">> 在 Docker 内编译前端壳 (Afilmory ref=$AFILMORY_REF) → $OUT/"
+echo ">> Build in Docker (Afilmory ref=$AFILMORY_REF) → $OUT/"
 rm -rf "$OUT"
 DOCKER_BUILDKIT=1 docker build \
-  -f Dockerfile.web \
+  -f docker/Dockerfile.web \
   --target export \
   --build-arg "AFILMORY_REPO=$AFILMORY_REPO" \
   --build-arg "AFILMORY_REF=$AFILMORY_REF" \

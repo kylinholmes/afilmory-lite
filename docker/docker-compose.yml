@@ -1,0 +1,31 @@
+# afilmory-lite —— 用 GHCR 上 CI 构建的运行镜像启动。
+# 镜像内已含：程序 + 前端静态壳(/app/web/dist) + exiftool + libheif。
+# 你只需提供配置和数据卷。
+#
+# 准备：
+#   cp docker/afilmory.example.toml ./afilmory.toml   # 然后按需修改
+#   mkdir -p data photos
+# 启动：
+#   docker compose up -d
+#   docker compose logs -f
+# 更新镜像（:main 为主干滚动 tag）：
+#   docker compose pull && docker compose up -d
+
+services:
+  afilmory:
+    image: ghcr.io/kylinholmes/afilmory-lite:main   # 生产建议 pin 版本 tag（打 v* tag 后会有 :0.1.0 / :latest）
+    container_name: afilmory-lite
+    restart: unless-stopped
+    pull_policy: always                              # :main 滚动镜像，up 时拉取最新
+    ports:
+      - "8080:8080"
+    volumes:
+      # 你的配置：从 docker/afilmory.example.toml 复制一份改。
+      # 注意配置里：dist_dir = "/app/web/dist"（镜像内置）、workdir = "/app/data"
+      - ./afilmory.toml:/app/afilmory.toml:ro
+      # 持久化 manifest.json + thumbnails（务必挂，否则重启重建）
+      - ./data:/app/data
+      # 本地存储(provider="local")时挂照片目录；用 S3 时可删掉这行
+      - ./photos:/app/photos:ro
+    # 若用 S3，且不想把密钥写进 afilmory.toml，可改用环境变量注入（当前配置读 TOML，
+    # 故先直接写在挂载的 afilmory.toml 里即可）。
