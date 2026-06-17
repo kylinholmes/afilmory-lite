@@ -24,17 +24,20 @@ pub async fn process_photo(
     deps: &PipelineDeps<'_>,
 ) -> Result<PhotoManifestItem> {
     let key = &obj.key;
+    let t_start = std::time::Instant::now();
     let raw = deps
         .storage
         .get_file(key)
         .await?
         .ok_or_else(|| Error::Storage(format!("missing file: {key}")))?;
+    let ms_get = t_start.elapsed().as_millis();
 
     let id = photo_id(key, deps.processing.digest_suffix_length);
     // contentDigest（M1a 无格式转换 → 处理后字节 = 原始字节）
     let digest = hex::encode(Sha256::digest(&raw));
 
     // EXIF：写临时文件给 exiftool；失败则降级为 None
+    let t_step = std::time::Instant::now();
     let exif_res = {
         let tmp = tempfile::Builder::new()
             .suffix(&dot_ext(key))
@@ -55,20 +58,27 @@ pub async fn process_photo(
             }
         }
     };
+    let ms_exif = t_step.elapsed().as_millis();
     let orientation = exif_res.as_ref().map(|e| e.orientation).unwrap_or(1);
     let exif_value = exif_res.as_ref().map(|e| e.exif.clone());
     let exif_date = exif_res.as_ref().and_then(|e| e.date_taken_iso.clone());
 
     // 解码（按 orientation 校正）
+    let t_step = std::time::Instant::now();
     let decoded = decode::decode(&raw, key, orientation)?;
+    let ms_decode = t_step.elapsed().as_millis();
 
     // 缩略图 + thumbHash
+    let t_step = std::time::Instant::now();
     let thumb_jpeg = thumbnail::make_thumbnail(
         &decoded.image,
         deps.processing.thumbnail_width,
         deps.processing.thumbnail_quality,
     )?;
+    let ms_thumb = t_step.elapsed().as_millis();
+    let t_step = std::time::Instant::now();
     let thumb_hash = thumbhash::compute_thumbhash(&thumb_jpeg)?;
+    let ms_thumbhash = t_step.elapsed().as_millis();
 
     // 写缩略图文件
     std::fs::create_dir_all(deps.thumb_dir).map_err(|e| Error::Io {
@@ -82,7 +92,9 @@ pub async fn process_photo(
     })?;
 
     // 影调
+    let t_step = std::time::Instant::now();
     let tone = tone::analyze_tone(&decoded.image);
+    let ms_tone = t_step.elapsed().as_millis();
 
     // info
     let pinfo = info::extract_info(key, exif_date.as_deref());
@@ -106,7 +118,7 @@ pub async fn process_photo(
     let motion_video = motion_photo::detect_motion_photo(&raw[..], exif_value.as_ref());
     if live_video.is_some() && motion_video.is_some() {
         return Err(Error::Storage(format!(
-            "{key} 同时检测到 Motion Photo 与 Live Photo（不允许）"
+            "{key} has both a Motion Photo and a Live Photo (not allowed)"
         )));
     }
     let video = motion_video.or(live_video);
@@ -115,6 +127,12 @@ pub async fn process_photo(
         .last_modified
         .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+
+    let total_ms = t_start.elapsed().as_millis();
+    let (w, h) = (decoded.width, decoded.height);
+    tracing::info!(
+        "processed {key} in {total_ms}ms (get={ms_get} exif={ms_exif} decode={ms_decode} thumb={ms_thumb} thumbhash={ms_thumbhash} tone={ms_tone}) {w}x{h}"
+    );
 
     Ok(PhotoManifestItem {
         id,

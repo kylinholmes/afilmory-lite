@@ -33,7 +33,7 @@ fn decode_raw(bytes: &[u8], key: &str) -> Result<image::DynamicImage> {
         #[cfg(not(feature = "heic"))]
         {
             return Err(Error::Storage(format!(
-                "{key}: HEIC 支持未编译（用 `--features heic` 构建并安装 libheif）"
+                "{key}: HEIC not supported in this build (build with `--features heic` and install libheif)"
             )));
         }
     }

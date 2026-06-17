@@ -98,6 +98,7 @@ impl Builder {
 
     pub async fn build(&self, opts: BuildOptions) -> Result<BuildResult> {
         let _guard = self.lock.lock().await; // 串行化：webhook/轮询并发触发不会撕裂
+        let t_build = std::time::Instant::now();
 
         let existing = load_manifest(&self.manifest_path)?;
         let existing_by_key: HashMap<String, &PhotoManifestItem> = existing
@@ -109,6 +110,7 @@ impl Builder {
         let images = self.storage.list_images().await?;
         let s3_keys: HashSet<String> = images.iter().map(|o| o.key.clone()).collect();
         let tasks = filter_tasks(&images, &existing_by_key, &self.thumb_dir, opts.force);
+        tracing::info!("listed {} images, {} to process", images.len(), tasks.len());
 
         // Live Photo 配对（需要全量文件列表；按配置开关）
         let live_map = Arc::new(if self.config.processing.enable_live_photo {
@@ -174,6 +176,16 @@ impl Builder {
         result.deleted_count = handle_deleted(&self.thumb_dir, &final_items);
         result.total = final_items.len();
         save_manifest(&self.manifest_path, final_items)?;
+        tracing::info!(
+            "build done in {}ms: new={} processed={} skipped={} failed={} deleted={} total={}",
+            t_build.elapsed().as_millis(),
+            result.new_count,
+            result.processed_count,
+            result.skipped_count,
+            result.failed_count,
+            result.deleted_count,
+            result.total
+        );
         Ok(result)
     }
 }
