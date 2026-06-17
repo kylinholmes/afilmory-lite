@@ -1,0 +1,5 @@
+/target
+
+# 上游 Afilmory 全量拷贝，只读参考、靠 pull 更新，不纳入本仓库
+/afilmory-main
+images/
