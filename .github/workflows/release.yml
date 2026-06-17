@@ -40,6 +40,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # HEIC 仅在 amd64-linux 启用：用 strukturag PPA 装 libheif≥1.18（发行版自带的太旧）。
+          # aarch64 为交叉编译、拿不到 arm64 的 PPA 库，故不含 HEIC。
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, features: heic }
           - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest }
           - { target: x86_64-apple-darwin, os: macos-13 }
@@ -63,7 +65,10 @@ jobs:
           key: ${{ matrix.target }}
       - name: Install libheif (for heic feature)
         if: ${{ matrix.features == 'heic' }}
-        run: sudo apt-get update && sudo apt-get install -y libheif-dev
+        run: |
+          sudo add-apt-repository -y ppa:strukturag/libheif
+          sudo apt-get update
+          sudo apt-get install -y libheif-dev
       - name: Build
         shell: bash
         run: |

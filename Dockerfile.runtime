@@ -13,13 +13,18 @@
 #
 # 多架构由 buildx 负责，TARGETARCH 自动选对应二进制（运行时镜像不做交叉编译）。
 
-FROM debian:bookworm-slim
+# ubuntu 24.04：与 CI 构建端同发行版，libheif 经同一 strukturag PPA 取得，构建/运行 ABI 对齐
+FROM ubuntu:24.04
 ARG TARGETARCH
+# exiftool（EXIF 保真）+ CA 证书（S3/HTTPS）；HEIC 运行库 libheif1 仅 amd64 需要（arm64 二进制不含 heic）
 RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      libimage-exiftool-perl \
-      libheif1 \
-      ca-certificates \
+ && apt-get install -y --no-install-recommends libimage-exiftool-perl ca-certificates \
+ && if [ "$TARGETARCH" = "amd64" ]; then \
+      apt-get install -y --no-install-recommends software-properties-common \
+      && add-apt-repository -y ppa:strukturag/libheif \
+      && apt-get update \
+      && apt-get install -y --no-install-recommends libheif1 ; \
+    fi \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY bin/afilmory-lite-${TARGETARCH} /usr/local/bin/afilmory-lite
