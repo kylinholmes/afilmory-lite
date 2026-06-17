@@ -1,5 +1,15 @@
 /target
 
+# 构建/运行产物
+/web-dist
+/data
+
+# 本地配置（可能含密钥）；示例见 docker/afilmory.example.toml
+/afilmory.toml
+*.local
+
 # 上游 Afilmory 全量拷贝，只读参考、靠 pull 更新，不纳入本仓库
 /afilmory-main
+
+# 测试 / 真实照片
 images/

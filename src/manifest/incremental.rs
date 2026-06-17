@@ -6,8 +6,12 @@ use crate::storage::StorageObject;
 
 /// 是否需要更新（基于 lastModified 时间戳字符串比较）。
 pub fn needs_update(existing: Option<&PhotoManifestItem>, obj: &StorageObject) -> bool {
-    let Some(existing) = existing else { return true };
-    let Some(lm) = obj.last_modified else { return true };
+    let Some(existing) = existing else {
+        return true;
+    };
+    let Some(lm) = obj.last_modified else {
+        return true;
+    };
     let obj_iso = lm.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     obj_iso != existing.last_modified // 字符串不等即视为变化（含更新/回退）
 }
@@ -20,7 +24,10 @@ pub fn thumbnail_exists(thumb_dir: &Path, photo_id: &str) -> bool {
 /// key → 纯 basename（去目录去扩展名），用于缩略图存在性判定（与上游一致，不含 digest 后缀）。
 fn basename_id(key: &str) -> &str {
     let base = key.rsplit('/').next().unwrap_or(key);
-    base.rsplit_once('.').map(|(s, _)| s).filter(|s| !s.is_empty()).unwrap_or(base)
+    base.rsplit_once('.')
+        .map(|(s, _)| s)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(base)
 }
 
 /// 从存储图片列表筛选出需要处理的对象。force 时全量。

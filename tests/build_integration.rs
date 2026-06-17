@@ -52,6 +52,9 @@ async fn end_to_end_local_build() {
     // 第二次构建为增量：无失败、total 不变、本轮不再处理
     let r2 = builder.build(BuildOptions { force: false }).await.unwrap();
     assert_eq!(r2.total, 2);
-    assert_eq!(r2.processed_count, 0, "second run should be fully incremental");
+    assert_eq!(
+        r2.processed_count, 0,
+        "second run should be fully incremental"
+    );
     assert_eq!(r2.skipped_count, 2);
 }

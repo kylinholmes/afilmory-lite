@@ -1,0 +1,6 @@
+# 仅把构建镜像真正需要的内容送进 build context（其余全部排除）
+*
+!/Cargo.toml
+!/Cargo.lock
+!/src
+!/docker

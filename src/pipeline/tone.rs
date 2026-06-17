@@ -24,7 +24,8 @@ fn analyze_inner(image: &DynamicImage) -> Option<ToneAnalysis> {
     }
     let mut lum = [0f64; 256];
     for p in small.pixels() {
-        let l = (0.2126 * p[0] as f64 + 0.7152 * p[1] as f64 + 0.0722 * p[2] as f64).round() as usize;
+        let l =
+            (0.2126 * p[0] as f64 + 0.7152 * p[1] as f64 + 0.0722 * p[2] as f64).round() as usize;
         lum[l.min(255)] += 1.0;
     }
     for v in lum.iter_mut() {
@@ -37,7 +38,11 @@ fn analyze_inner(image: &DynamicImage) -> Option<ToneAnalysis> {
     let brightness = (mean * (100.0 / 255.0)).round() as u32;
     let shadow_ratio: f64 = lum[0..86].iter().sum();
     let highlight_ratio: f64 = lum[170..256].iter().sum();
-    let variance: f64 = lum.iter().enumerate().map(|(i, &p)| p * (i as f64 - mean).powi(2)).sum();
+    let variance: f64 = lum
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| p * (i as f64 - mean).powi(2))
+        .sum();
     let std_dev = variance.sqrt();
     let contrast = ((std_dev / 127.5) * 100.0).round().min(100.0) as u32;
 

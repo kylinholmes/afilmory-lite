@@ -1,8 +1,11 @@
 pub mod decode;
-pub mod thumbnail;
-pub mod thumbhash;
-pub mod tone;
+#[cfg(feature = "heic")]
+pub mod heic;
 pub mod info;
+pub mod motion_photo;
+pub mod thumbhash;
+pub mod thumbnail;
+pub mod tone;
 
 mod process;
-pub use process::{process_photo, PipelineDeps};
+pub use process::{PipelineDeps, process_photo};

@@ -3,8 +3,8 @@ use sha2::{Digest, Sha256};
 use crate::config::ProcessingConfig;
 use crate::error::{Error, Result};
 use crate::exif::ExifExtractor;
-use crate::manifest::PhotoManifestItem;
-use crate::pipeline::{decode, info, thumbnail, thumbhash, tone};
+use crate::manifest::{PhotoManifestItem, VideoSource};
+use crate::pipeline::{decode, info, motion_photo, thumbhash, thumbnail, tone};
 use crate::storage::{StorageObject, StorageProvider};
 
 pub struct PipelineDeps<'a> {
@@ -13,11 +13,16 @@ pub struct PipelineDeps<'a> {
     pub processing: &'a ProcessingConfig,
     /// 缩略图输出目录（thumbnails/）。
     pub thumb_dir: &'a std::path::Path,
+    /// Live Photo 配对：图片 key -> 视频对象。
+    pub live_map: &'a std::collections::HashMap<String, StorageObject>,
 }
 
 /// 处理单张照片，写出缩略图文件，返回 manifest item。失败返回 Err（调用方记失败计数）。
 /// EXIF 抽取失败是非致命的（降级为无 EXIF），以便缺少 exiftool 时仍能产出其余字段。
-pub async fn process_photo(obj: &StorageObject, deps: &PipelineDeps<'_>) -> Result<PhotoManifestItem> {
+pub async fn process_photo(
+    obj: &StorageObject,
+    deps: &PipelineDeps<'_>,
+) -> Result<PhotoManifestItem> {
     let key = &obj.key;
     let raw = deps
         .storage
@@ -34,9 +39,14 @@ pub async fn process_photo(obj: &StorageObject, deps: &PipelineDeps<'_>) -> Resu
         let tmp = tempfile::Builder::new()
             .suffix(&dot_ext(key))
             .tempfile()
-            .map_err(|e| Error::Io { path: std::path::PathBuf::from("exif-temp"), source: e })?;
-        std::fs::write(tmp.path(), &raw)
-            .map_err(|e| Error::Io { path: tmp.path().to_path_buf(), source: e })?;
+            .map_err(|e| Error::Io {
+                path: std::path::PathBuf::from("exif-temp"),
+                source: e,
+            })?;
+        std::fs::write(tmp.path(), &raw).map_err(|e| Error::Io {
+            path: tmp.path().to_path_buf(),
+            source: e,
+        })?;
         match deps.exif.extract(tmp.path()).await {
             Ok(r) => r,
             Err(e) => {
@@ -53,16 +63,23 @@ pub async fn process_photo(obj: &StorageObject, deps: &PipelineDeps<'_>) -> Resu
     let decoded = decode::decode(&raw, key, orientation)?;
 
     // 缩略图 + thumbHash
-    let thumb_jpeg =
-        thumbnail::make_thumbnail(&decoded.image, deps.processing.thumbnail_width, deps.processing.thumbnail_quality)?;
+    let thumb_jpeg = thumbnail::make_thumbnail(
+        &decoded.image,
+        deps.processing.thumbnail_width,
+        deps.processing.thumbnail_quality,
+    )?;
     let thumb_hash = thumbhash::compute_thumbhash(&thumb_jpeg)?;
 
     // 写缩略图文件
-    std::fs::create_dir_all(deps.thumb_dir)
-        .map_err(|e| Error::Io { path: deps.thumb_dir.to_path_buf(), source: e })?;
+    std::fs::create_dir_all(deps.thumb_dir).map_err(|e| Error::Io {
+        path: deps.thumb_dir.to_path_buf(),
+        source: e,
+    })?;
     let thumb_path = deps.thumb_dir.join(format!("{id}.jpg"));
-    std::fs::write(&thumb_path, &thumb_jpeg)
-        .map_err(|e| Error::Io { path: thumb_path.clone(), source: e })?;
+    std::fs::write(&thumb_path, &thumb_jpeg).map_err(|e| Error::Io {
+        path: thumb_path.clone(),
+        source: e,
+    })?;
 
     // 影调
     let tone = tone::analyze_tone(&decoded.image);
@@ -78,6 +95,21 @@ pub async fn process_photo(obj: &StorageObject, deps: &PipelineDeps<'_>) -> Resu
         .map(|e| e.to_ascii_uppercase())
         .unwrap_or_else(|| "UNKNOWN".into());
     let is_hdr = compute_is_hdr(exif_value.as_ref());
+    // 视频源：Motion Photo（图内嵌视频，优先）/ Live Photo（独立视频文件），二者互斥
+    let live_video = deps
+        .live_map
+        .get(key.as_str())
+        .map(|v| VideoSource::LivePhoto {
+            video_url: deps.storage.generate_public_url(&v.key),
+            s3_key: v.key.clone(),
+        });
+    let motion_video = motion_photo::detect_motion_photo(&raw[..], exif_value.as_ref());
+    if live_video.is_some() && motion_video.is_some() {
+        return Err(Error::Storage(format!(
+            "{key} 同时检测到 Motion Photo 与 Live Photo（不允许）"
+        )));
+    }
+    let video = motion_video.or(live_video);
     let thumbnail_url = format!("/thumbnails/{id}.jpg");
     let last_modified = obj
         .last_modified
@@ -104,7 +136,7 @@ pub async fn process_photo(obj: &StorageObject, deps: &PipelineDeps<'_>) -> Resu
         exif: exif_value,
         tone_analysis: Some(tone),
         location: None,
-        video: None,
+        video,
         is_hdr,
         og_image_url: None,
     })
@@ -112,7 +144,11 @@ pub async fn process_photo(obj: &StorageObject, deps: &PipelineDeps<'_>) -> Resu
 
 fn photo_id(key: &str, digest_suffix_length: usize) -> String {
     let base = key.rsplit('/').next().unwrap_or(key);
-    let stem = base.rsplit_once('.').map(|(s, _)| s).filter(|s| !s.is_empty()).unwrap_or(base);
+    let stem = base
+        .rsplit_once('.')
+        .map(|(s, _)| s)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(base);
     if digest_suffix_length == 0 {
         return stem.to_string();
     }
@@ -121,14 +157,27 @@ fn photo_id(key: &str, digest_suffix_length: usize) -> String {
 }
 
 fn dot_ext(key: &str) -> String {
-    key.rsplit_once('.').map(|(_, e)| format!(".{e}")).unwrap_or_default()
+    key.rsplit_once('.')
+        .map(|(_, e)| format!(".{e}"))
+        .unwrap_or_default()
 }
 
 fn compute_is_hdr(exif: Option<&serde_json::Value>) -> bool {
     let Some(e) = exif else { return false };
-    let mp = e.get("MPImageType").and_then(|v| v.as_str());
-    let urn = e.get("UniformResourceName").and_then(|v| v.as_str());
-    mp == Some("Gain Map Image") || urn == Some("urn:iso:std:iso:ts:21496:-1")
+    if e.get("MPImageType").and_then(|v| v.as_str()) == Some("Gain Map Image") {
+        return true;
+    }
+    if e.get("UniformResourceName").and_then(|v| v.as_str()) == Some("urn:iso:std:iso:ts:21496:-1")
+    {
+        return true;
+    }
+    // ContainerDirectory 含 GainMap 语义（exiftool 表示形式多样：数组/字符串，做容错子串匹配）
+    if let Some(cd) = e.get("ContainerDirectory")
+        && cd.to_string().contains("GainMap")
+    {
+        return true;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -143,5 +192,21 @@ mod tests {
         let id = photo_id("trip/DSC_0001.jpg", 6);
         assert!(id.starts_with("DSC_0001_"));
         assert_eq!(id.len(), "DSC_0001_".len() + 6);
+    }
+
+    #[test]
+    fn hdr_detection() {
+        assert!(!compute_is_hdr(None));
+        assert!(!compute_is_hdr(Some(&serde_json::json!({"Make": "X"}))));
+        assert!(compute_is_hdr(Some(
+            &serde_json::json!({"MPImageType": "Gain Map Image"})
+        )));
+        assert!(compute_is_hdr(Some(&serde_json::json!({
+            "UniformResourceName": "urn:iso:std:iso:ts:21496:-1"
+        }))));
+        // ContainerDirectory 数组里含 GainMap 语义
+        assert!(compute_is_hdr(Some(&serde_json::json!({
+            "ContainerDirectory": [{"Item": {"Semantic": "Primary"}}, {"Item": {"Semantic": "GainMap", "Length": 123}}]
+        }))));
     }
 }

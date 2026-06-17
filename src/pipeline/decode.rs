@@ -12,10 +12,35 @@ pub struct Decoded {
 /// 解码图片字节；按 EXIF orientation 校正图像与尺寸。
 /// orientation 来自 EXIF（1..=8，缺省按 1 处理）。
 pub fn decode(bytes: &[u8], key: &str, orientation: u32) -> Result<Decoded> {
-    let img = image::load_from_memory(bytes).map_err(|e| Error::Image { key: key.to_string(), source: e })?;
+    let img = decode_raw(bytes, key)?;
     let img = apply_orientation(img, orientation);
     let (width, height) = (img.width(), img.height());
-    Ok(Decoded { image: img, width, height })
+    Ok(Decoded {
+        image: img,
+        width,
+        height,
+    })
+}
+
+/// 按扩展名选择解码后端：HEIC/HEIF/HIF 走 libheif（`heic` feature）；其余走 `image` crate。
+fn decode_raw(bytes: &[u8], key: &str) -> Result<image::DynamicImage> {
+    let ext = key.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    if matches!(ext.as_str(), "heic" | "heif" | "hif") {
+        #[cfg(feature = "heic")]
+        {
+            return crate::pipeline::heic::decode_heic(bytes, key);
+        }
+        #[cfg(not(feature = "heic"))]
+        {
+            return Err(Error::Storage(format!(
+                "{key}: HEIC 支持未编译（用 `--features heic` 构建并安装 libheif）"
+            )));
+        }
+    }
+    image::load_from_memory(bytes).map_err(|e| Error::Image {
+        key: key.to_string(),
+        source: e,
+    })
 }
 
 /// 按 EXIF orientation（1..=8）做几何校正。

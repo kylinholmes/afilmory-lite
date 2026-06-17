@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+#
+# 只在容器内编译 Afilmory 前端「server-serve 壳」并导出 dist。
+# Rust 二进制不在这里编译 —— 由 GitHub Action 跨平台构建（见 .github/workflows/release.yml）。
+#
+# 本地导出到 ./web-dist：
+#   DOCKER_BUILDKIT=1 docker build -f Dockerfile.web --target export \
+#     --build-arg AFILMORY_REF=main \
+#     --output type=local,dest=./web-dist .
+# 或直接用脚本： scripts/build-web.sh
+
+FROM --platform=$BUILDPLATFORM node:22-bookworm AS build
+ARG AFILMORY_REPO=https://github.com/Afilmory/Afilmory.git
+ARG AFILMORY_REF=main
+RUN corepack enable
+WORKDIR /src
+RUN git clone --depth 1 --branch "${AFILMORY_REF}" "${AFILMORY_REPO}" .
+# 占位 manifest：server-serve 不内嵌数据，放空 manifest 以防潜在 import 失败
+RUN mkdir -p apps/web/src/data \
+ && printf '{"version":"v10","data":[],"cameras":[],"lenses":[]}' > apps/web/src/data/photos-manifest.json
+# Afilmory 的 preinstall 会自动生成 config.json / builder.config.ts
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+# 空壳：不内嵌 manifest（运行时由 Rust 注入），base=/static/web/
+RUN AFILMORY_EMBED_MANIFEST=false BUILD_FOR_SERVER_SERVE=1 pnpm --filter @afilmory/web build:serve
+
+# 导出阶段：仅含 dist，便于 `--output type=local` 直接提取静态文件
+FROM scratch AS export
+COPY --from=build /src/apps/web/dist /

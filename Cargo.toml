@@ -12,7 +12,7 @@ name = "afilmory-lite"
 path = "src/main.rs"
 
 [dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "process", "sync"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "process", "sync", "net"] }
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -29,6 +29,17 @@ bytes = "1"
 tracing = "0.1"
 tempfile = "3"
 clap = { version = "4", features = ["derive"] }
+axum = "0.8"
+mime_guess = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+quick-xml = { version = "0.36", features = ["serialize"] }
+hmac = "0.12"
+libheif-rs = { version = "1", optional = true }
+
+[features]
+# HEIC/HEIF 解码（需要系统 libheif；默认关，避免无谓的 C 依赖与跨平台构建负担）。
+heic = ["dep:libheif-rs"]
 
 [dev-dependencies]
 tempfile = "3"
+tower = { version = "0.5", features = ["util"] }

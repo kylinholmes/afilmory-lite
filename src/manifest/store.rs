@@ -28,10 +28,16 @@ pub fn save_manifest(path: &Path, mut items: Vec<PhotoManifestItem>) -> Result<(
         lenses,
     };
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| Error::Io { path: parent.to_path_buf(), source: e })?;
+        std::fs::create_dir_all(parent).map_err(|e| Error::Io {
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
     }
     let json = serde_json::to_string_pretty(&manifest)?;
-    std::fs::write(path, json).map_err(|e| Error::Io { path: path.to_path_buf(), source: e })?;
+    std::fs::write(path, json).map_err(|e| Error::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
     Ok(())
 }
 
@@ -40,7 +46,8 @@ fn exif_str<'a>(item: &'a PhotoManifestItem, key: &str) -> Option<&'a str> {
 }
 
 pub fn generate_cameras(items: &[PhotoManifestItem]) -> Vec<CameraInfo> {
-    let mut seen: std::collections::BTreeMap<String, CameraInfo> = std::collections::BTreeMap::new();
+    let mut seen: std::collections::BTreeMap<String, CameraInfo> =
+        std::collections::BTreeMap::new();
     for item in items {
         let (Some(make), Some(model)) = (exif_str(item, "Make"), exif_str(item, "Model")) else {
             continue;
@@ -48,8 +55,11 @@ pub fn generate_cameras(items: &[PhotoManifestItem]) -> Vec<CameraInfo> {
         let make = make.trim().to_string();
         let model = model.trim().to_string();
         let display_name = format!("{make} {model}");
-        seen.entry(display_name.clone())
-            .or_insert(CameraInfo { make, model, display_name });
+        seen.entry(display_name.clone()).or_insert(CameraInfo {
+            make,
+            model,
+            display_name,
+        });
     }
     seen.into_values().collect() // BTreeMap 已按 displayName 升序
 }
@@ -57,15 +67,20 @@ pub fn generate_cameras(items: &[PhotoManifestItem]) -> Vec<CameraInfo> {
 pub fn generate_lenses(items: &[PhotoManifestItem]) -> Vec<LensInfo> {
     let mut seen: std::collections::BTreeMap<String, LensInfo> = std::collections::BTreeMap::new();
     for item in items {
-        let Some(model) = exif_str(item, "LensModel") else { continue };
+        let Some(model) = exif_str(item, "LensModel") else {
+            continue;
+        };
         let model = model.trim().to_string();
         let make = exif_str(item, "LensMake").map(|s| s.trim().to_string());
         let display_name = match &make {
             Some(m) => format!("{m} {model}"),
             None => model.clone(),
         };
-        seen.entry(display_name.clone())
-            .or_insert(LensInfo { make, model, display_name });
+        seen.entry(display_name.clone()).or_insert(LensInfo {
+            make,
+            model,
+            display_name,
+        });
     }
     seen.into_values().collect()
 }
@@ -119,12 +134,20 @@ mod tests {
         let loaded = load_manifest(&path).unwrap();
         // 降序：b(3月) > c(2月) > a(1月)
         assert_eq!(
-            loaded.data.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+            loaded
+                .data
+                .iter()
+                .map(|i| i.id.as_str())
+                .collect::<Vec<_>>(),
             ["b", "c", "a"]
         );
         // cameras 去重 + 升序：Canon R5, Sony A7
         assert_eq!(
-            loaded.cameras.iter().map(|c| c.display_name.as_str()).collect::<Vec<_>>(),
+            loaded
+                .cameras
+                .iter()
+                .map(|c| c.display_name.as_str())
+                .collect::<Vec<_>>(),
             ["Canon R5", "Sony A7"]
         );
     }

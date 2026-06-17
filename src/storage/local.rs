@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use walkdir::WalkDir;
 
 use crate::error::{Error, Result};
-use crate::storage::{is_image_key, StorageObject, StorageProvider};
+use crate::storage::{StorageObject, StorageProvider, is_image_key};
 
 pub struct LocalProvider {
     base_path: PathBuf,
@@ -24,16 +24,25 @@ impl LocalProvider {
     ) -> Result<Self> {
         let exclude = match exclude_regex {
             Some(r) => Some(
-                regex::Regex::new(&r).map_err(|e| Error::Config(format!("bad exclude_regex: {e}")))?,
+                regex::Regex::new(&r)
+                    .map_err(|e| Error::Config(format!("bad exclude_regex: {e}")))?,
             ),
             None => None,
         };
-        Ok(Self { base_path, base_url, exclude, max_file_limit })
+        Ok(Self {
+            base_path,
+            base_url,
+            exclude,
+            max_file_limit,
+        })
     }
 
     fn scan(&self) -> Result<Vec<StorageObject>> {
         let mut out = Vec::new();
-        for entry in WalkDir::new(&self.base_path).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(&self.base_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             if !entry.file_type().is_file() {
                 continue;
             }
@@ -46,7 +55,9 @@ impl LocalProvider {
             {
                 continue;
             }
-            let meta = entry.metadata().map_err(|e| Error::Storage(e.to_string()))?;
+            let meta = entry
+                .metadata()
+                .map_err(|e| Error::Storage(e.to_string()))?;
             let modified: Option<DateTime<Utc>> = meta.modified().ok().map(DateTime::<Utc>::from);
             let mtime = meta
                 .modified()
@@ -75,7 +86,11 @@ impl LocalProvider {
 #[async_trait]
 impl StorageProvider for LocalProvider {
     async fn list_images(&self) -> Result<Vec<StorageObject>> {
-        Ok(self.scan()?.into_iter().filter(|o| is_image_key(&o.key)).collect())
+        Ok(self
+            .scan()?
+            .into_iter()
+            .filter(|o| is_image_key(&o.key))
+            .collect())
     }
     async fn list_all_files(&self) -> Result<Vec<StorageObject>> {
         self.scan()
@@ -84,7 +99,10 @@ impl StorageProvider for LocalProvider {
         match tokio::fs::read(self.abs(key)).await {
             Ok(b) => Ok(Some(Bytes::from(b))),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(Error::Io { path: self.abs(key), source: e }),
+            Err(e) => Err(Error::Io {
+                path: self.abs(key),
+                source: e,
+            }),
         }
     }
     fn generate_public_url(&self, key: &str) -> String {
@@ -108,8 +126,15 @@ mod tests {
         std::fs::write(dir.path().join("trip/b.txt"), b"x").unwrap();
         std::fs::write(dir.path().join("c.png"), b"x").unwrap();
 
-        let p = LocalProvider::new(dir.path().to_path_buf(), Some("/photos".into()), None, None).unwrap();
-        let mut imgs: Vec<String> = p.list_images().await.unwrap().into_iter().map(|o| o.key).collect();
+        let p = LocalProvider::new(dir.path().to_path_buf(), Some("/photos".into()), None, None)
+            .unwrap();
+        let mut imgs: Vec<String> = p
+            .list_images()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|o| o.key)
+            .collect();
         imgs.sort();
         assert_eq!(imgs, vec!["c.png".to_string(), "trip/a.JPG".to_string()]);
         assert_eq!(p.generate_public_url("trip/a.JPG"), "/photos/trip/a.JPG");

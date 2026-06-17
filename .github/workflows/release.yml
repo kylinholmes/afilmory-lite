@@ -1,0 +1,150 @@
+name: release
+
+# 前端壳由 Docker 编译；Rust 二进制由本 Action 跨平台编译；运行时镜像只组装预制产物。
+on:
+  push:
+    tags: ["v*"]
+    branches: ["main", "master"]
+  workflow_dispatch:
+    inputs:
+      afilmory_ref:
+        description: "构建 SPA 所用的 Afilmory git ref"
+        default: "main"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ---------- 前端：Docker 内编译 SPA 壳 ----------
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build SPA shell (Docker)
+        run: |
+          docker build -f Dockerfile.web --target export \
+            --build-arg AFILMORY_REF="${{ github.event.inputs.afilmory_ref || 'main' }}" \
+            --output type=local,dest=web-dist .
+      - name: Archive dist
+        run: tar czf afilmory-lite-web-dist.tar.gz -C web-dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: afilmory-lite-web-dist.tar.gz
+
+  # ---------- Rust：跨平台编译二进制 ----------
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, features: heic }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: x86_64-apple-darwin, os: macos-13 }
+          - { target: aarch64-apple-darwin, os: macos-14 }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross toolchain (linux aarch64)
+        if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+          # aarch64-linux-gnu-gcc 同时作为 Rust 链接器与 ring(C) 的 CC
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install libheif (for heic feature)
+        if: ${{ matrix.features == 'heic' }}
+        run: sudo apt-get update && sudo apt-get install -y libheif-dev
+      - name: Build
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo build --release --bin afilmory-lite --target ${{ matrix.target }} --features "${{ matrix.features }}"
+          else
+            cargo build --release --bin afilmory-lite --target ${{ matrix.target }}
+          fi
+      - name: Package
+        shell: bash
+        run: |
+          ext=""
+          [[ "${{ matrix.os }}" == windows* ]] && ext=".exe"
+          name="afilmory-lite-${{ matrix.target }}"
+          mkdir -p "out/$name"
+          cp "target/${{ matrix.target }}/release/afilmory-lite${ext}" "out/$name/"
+          cp docker/afilmory.example.toml "out/$name/afilmory.example.toml"
+          tar czf "$name.tar.gz" -C out "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.target }}
+          path: afilmory-lite-${{ matrix.target }}.tar.gz
+
+  # ---------- 运行时镜像：组装预制二进制 + dist（不编译）----------
+  image:
+    needs: [web, rust]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Assemble build context
+        run: |
+          set -eux
+          mkdir -p ctx/bin ctx/web-dist
+          tar xzf artifacts/web-dist/afilmory-lite-web-dist.tar.gz -C ctx/web-dist
+          tar xzf artifacts/bin-x86_64-unknown-linux-gnu/afilmory-lite-x86_64-unknown-linux-gnu.tar.gz -C /tmp
+          cp /tmp/afilmory-lite-x86_64-unknown-linux-gnu/afilmory-lite ctx/bin/afilmory-lite-amd64
+          tar xzf artifacts/bin-aarch64-unknown-linux-gnu/afilmory-lite-aarch64-unknown-linux-gnu.tar.gz -C /tmp
+          cp /tmp/afilmory-lite-aarch64-unknown-linux-gnu/afilmory-lite ctx/bin/afilmory-lite-arm64
+          cp docker/afilmory.example.toml ctx/afilmory.toml
+          cp Dockerfile.runtime ctx/Dockerfile
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+      - uses: docker/build-push-action@v6
+        with:
+          context: ctx
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # ---------- 打标签时：把二进制 + dist 作为 Release 附件 ----------
+  release:
+    needs: [web, rust]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect assets
+        run: |
+          mkdir release
+          find artifacts -name '*.tar.gz' -exec cp {} release/ \;
+          ls -la release
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.tar.gz

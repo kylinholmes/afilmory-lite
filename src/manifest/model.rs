@@ -94,7 +94,10 @@ pub enum VideoSource {
         offset: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
         size: Option<u64>,
-        #[serde(rename = "presentationTimestamp", skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "presentationTimestamp",
+            skip_serializing_if = "Option::is_none"
+        )]
         presentation_timestamp: Option<i64>,
     },
 }
@@ -170,7 +173,10 @@ mod tests {
 
     #[test]
     fn video_source_tagged() {
-        let v = VideoSource::LivePhoto { video_url: "u".into(), s3_key: "k".into() };
+        let v = VideoSource::LivePhoto {
+            video_url: "u".into(),
+            s3_key: "k".into(),
+        };
         let j = serde_json::to_value(&v).unwrap();
         assert_eq!(j["type"], "live-photo");
         assert_eq!(j["videoUrl"], "u");

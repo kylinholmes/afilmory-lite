@@ -11,7 +11,8 @@ pub fn compute_thumbhash(thumbnail_jpeg: &[u8]) -> Result<Option<String>> {
     };
     let small: DynamicImage = img.resize(100, 100, FilterType::Lanczos3);
     let rgba = small.to_rgba8();
-    let hash = thumbhash::rgba_to_thumb_hash(rgba.width() as usize, rgba.height() as usize, rgba.as_raw());
+    let hash =
+        thumbhash::rgba_to_thumb_hash(rgba.width() as usize, rgba.height() as usize, rgba.as_raw());
     Ok(Some(hex::encode(hash)))
 }
 
@@ -27,7 +28,10 @@ mod tests {
         }
         let mut out = Vec::new();
         DynamicImage::ImageRgba8(i)
-            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Jpeg)
+            .write_to(
+                &mut std::io::Cursor::new(&mut out),
+                image::ImageFormat::Jpeg,
+            )
             .unwrap();
         out
     }
@@ -36,7 +40,10 @@ mod tests {
     fn produces_lowercase_hex() {
         let h = compute_thumbhash(&jpeg(600, 400)).unwrap().unwrap();
         assert!(!h.is_empty());
-        assert!(h.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(
+            h.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
         // thumbhash 可被解回
         let bytes = hex::decode(&h).unwrap();
         assert!(!bytes.is_empty());

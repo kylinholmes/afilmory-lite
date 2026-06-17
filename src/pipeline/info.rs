@@ -33,7 +33,12 @@ pub fn extract_info(key: &str, exif_date_taken: Option<&str>) -> PhotoInfo {
     // title
     let title = clean_title(file_stem);
 
-    PhotoInfo { title, date_taken, tags, description: String::new() }
+    PhotoInfo {
+        title,
+        date_taken,
+        tags,
+        description: String::new(),
+    }
 }
 
 fn strip_ext(name: &str) -> &str {
@@ -48,7 +53,10 @@ fn date_from_filename(stem: &str) -> Option<String> {
     let caps = re.captures(stem)?;
     let s = format!("{}-{}-{}", &caps[1], &caps[2], &caps[3]);
     let ndt = NaiveDateTime::parse_from_str(&format!("{s} 00:00:00"), "%Y-%m-%d %H:%M:%S").ok()?;
-    Some(Utc.from_utc_datetime(&ndt).to_rfc3339_opts(SecondsFormat::Millis, true))
+    Some(
+        Utc.from_utc_datetime(&ndt)
+            .to_rfc3339_opts(SecondsFormat::Millis, true),
+    )
 }
 
 fn clean_title(stem: &str) -> String {

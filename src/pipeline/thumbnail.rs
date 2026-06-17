@@ -16,8 +16,16 @@ pub fn make_thumbnail(image: &DynamicImage, thumb_width: u32, quality: u8) -> Re
     let mut out = Vec::new();
     let encoder = JpegEncoder::new_with_quality(&mut out, quality);
     encoder
-        .write_image(rgb.as_raw(), rgb.width(), rgb.height(), ExtendedColorType::Rgb8)
-        .map_err(|e| Error::Image { key: "thumbnail".into(), source: e })?;
+        .write_image(
+            rgb.as_raw(),
+            rgb.width(),
+            rgb.height(),
+            ExtendedColorType::Rgb8,
+        )
+        .map_err(|e| Error::Image {
+            key: "thumbnail".into(),
+            source: e,
+        })?;
     Ok(out)
 }
 

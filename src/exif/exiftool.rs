@@ -83,9 +83,16 @@ impl ExifExtractor for ExiftoolExtractor {
             picked.insert("GPSAltitudeRef".into(), Value::from(norm));
         }
 
-        let orientation = picked.get("Orientation").and_then(orientation_to_u32).unwrap_or(1);
+        let orientation = picked
+            .get("Orientation")
+            .and_then(orientation_to_u32)
+            .unwrap_or(1);
 
-        Ok(Some(ExifResult { exif: Value::Object(picked), date_taken_iso, orientation }))
+        Ok(Some(ExifResult {
+            exif: Value::Object(picked),
+            date_taken_iso,
+            orientation,
+        }))
     }
 }
 
@@ -93,7 +100,10 @@ impl ExifExtractor for ExiftoolExtractor {
 fn exif_date_to_iso(s: &str) -> Option<String> {
     let head = &s[..s.len().min(19)];
     let ndt = NaiveDateTime::parse_from_str(head, "%Y:%m:%d %H:%M:%S").ok()?;
-    Some(Utc.from_utc_datetime(&ndt).to_rfc3339_opts(SecondsFormat::Millis, true))
+    Some(
+        Utc.from_utc_datetime(&ndt)
+            .to_rfc3339_opts(SecondsFormat::Millis, true),
+    )
 }
 
 /// Orientation 可能是数字或文本（如 "Rotate 90 CW"）。文本时映射回 1..=8。
@@ -128,7 +138,10 @@ mod tests {
 
     #[test]
     fn date_parsing() {
-        assert_eq!(exif_date_to_iso("2024:05:01 10:11:12"), Some("2024-05-01T10:11:12.000Z".to_string()));
+        assert_eq!(
+            exif_date_to_iso("2024:05:01 10:11:12"),
+            Some("2024-05-01T10:11:12.000Z".to_string())
+        );
     }
 
     #[tokio::test]
