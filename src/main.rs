@@ -44,8 +44,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
         Command::Build { config, force } => {
-            let config = Config::load(&config)?;
-            let state = AppState::new(config)?;
+            let loaded = Config::load(&config)?;
+            let state = AppState::new(loaded, config)?;
             let r = state.run_build(BuildOptions { force }).await?;
             println!(
                 "build done: new={} processed={} skipped={} failed={} deleted={} total={}",
@@ -56,18 +56,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 r.deleted_count,
                 r.total
             );
-            println!("manifest: {}", state.builder.manifest_path().display());
+            println!("manifest: {}", state.manifest_path().await.display());
         }
         Command::Serve { config } => {
-            let config = Config::load(&config)?;
-            let listen = config.server.listen.clone();
-            let state = AppState::new(config)?;
+            let loaded = Config::load(&config)?;
+            let listen = loaded.server.listen.clone();
+            let state = AppState::new(loaded, config)?;
             let coord = BuildCoordinator::start(state.clone());
-            scheduler::spawn_poll(coord.clone(), state.config.triggers.poll_interval_secs);
+            scheduler::spawn_poll(coord.clone(), state.clone());
             coord.trigger(false); // 启动时跑一次增量
             let app = build_router(state, coord);
             let listener = tokio::net::TcpListener::bind(&listen).await?;
-            println!("afilmory-lite serving on http://{listen}  (Ctrl-C 退出)");
+            println!("afilmory-lite serving on http://{listen}  (Ctrl-C 退出；/admin 配置页)");
             axum::serve(listener, app).await?;
         }
     }

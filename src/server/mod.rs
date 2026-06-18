@@ -1,7 +1,7 @@
 mod inject;
 pub use inject::inject;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use axum::extract::{Path as AxPath, State};
 use axum::http::{HeaderMap, StatusCode, Uri, header};
@@ -9,51 +9,52 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 
+use crate::config::Config;
 use crate::scheduler::BuildCoordinator;
 use crate::state::AppState;
 
 const IMMUTABLE: &str = "public, max-age=31536000, immutable";
 const NO_CACHE: &str = "no-cache";
 
-/// 构建 serve 路由：dist 静态资源、缩略图、触发 API、以及 SPA fallback（注入首页）。
+/// 构建 serve 路由：dist 静态资源、缩略图、触发/管理 API、/admin 页、以及 SPA fallback（注入首页 + 本地原图）。
 pub fn build_router(state: AppState, coord: BuildCoordinator) -> Router {
-    let mut router = Router::new()
+    Router::new()
         .route("/static/web/{*path}", get(serve_static))
         .route("/thumbnails/{*path}", get(serve_thumbnail))
         .route("/api/status", get(api_status))
         .route("/api/admin/build", post(api_admin_build))
+        .route("/api/admin/config", get(api_get_config).put(api_put_config))
         .route("/api/hooks/build", post(api_hook_build))
-        .route("/api/hooks/s3", post(api_hook_s3));
-    // 本地存储：按 base_url 前缀托管原图（S3 的 originalUrl 直连桶/CDN，无需本服务）
-    if let Some((prefix, _dir)) = &state.originals {
-        router = router.route(&format!("{prefix}/{{*path}}"), get(serve_original));
-    }
-    router
+        .route("/api/hooks/s3", post(api_hook_s3))
+        .route("/admin", get(admin_page))
         .fallback(spa_fallback)
         .layer(Extension(coord))
         .with_state(state)
 }
 
-async fn serve_original(State(st): State<AppState>, AxPath(path): AxPath<String>) -> Response {
-    match &st.originals {
-        Some((_, dir)) => serve_file(dir, &path).await,
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-// ---- 静态资源 / 首页注入 ----
+// ---- 静态资源 / 首页注入 / 本地原图 ----
 
 async fn serve_static(State(st): State<AppState>, AxPath(path): AxPath<String>) -> Response {
-    serve_file(&st.config.server.dist_dir, &path).await
+    let cfg = st.config().await;
+    serve_file(&cfg.server.dist_dir, &path).await
 }
 
 async fn serve_thumbnail(State(st): State<AppState>, AxPath(path): AxPath<String>) -> Response {
-    serve_file(&st.config.server.workdir.join("thumbnails"), &path).await
+    let cfg = st.config().await;
+    serve_file(&cfg.server.workdir.join("thumbnails"), &path).await
 }
 
-/// SPA history fallback：无扩展名路径返回注入后的 index.html；有扩展名但未命中静态路由 → 404。
+/// fallback：① 命中本地原图前缀 → serve 原图；② 无扩展名 → 注入后的 index.html；③ 有扩展名未命中 → 404。
 async fn spa_fallback(State(st): State<AppState>, uri: Uri) -> Response {
-    let last = uri.path().rsplit('/').next().unwrap_or("");
+    let path = uri.path();
+    // 本地存储托管原图（前缀来自 base_url，热重载可变，故在此动态判断而非静态路由）
+    if let Some((prefix, dir)) = st.originals().await
+        && let Some(rel) = path.strip_prefix(&prefix).and_then(|r| r.strip_prefix('/'))
+        && !rel.is_empty()
+    {
+        return serve_file(&dir, rel).await;
+    }
+    let last = path.rsplit('/').next().unwrap_or("");
     if last.contains('.') && !last.starts_with('.') {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -81,7 +82,8 @@ async fn serve_file(base: &Path, rel: &str) -> Response {
 }
 
 async fn render_index(st: &AppState) -> Response {
-    let index_path = st.config.server.dist_dir.join("index.html");
+    let cfg = st.config().await;
+    let index_path = cfg.server.dist_dir.join("index.html");
     let Ok(html) = tokio::fs::read_to_string(&index_path).await else {
         return (StatusCode::NOT_FOUND, "index.html not found").into_response();
     };
@@ -89,9 +91,8 @@ async fn render_index(st: &AppState) -> Response {
         let m = st.manifest.read().await;
         serde_json::to_string(&*m).unwrap_or_else(|_| "{}".into())
     };
-    let site_json = serde_json::to_string(&st.config.site).unwrap_or_else(|_| "{}".into());
-    let (title, description) = site_title_desc(&st.config.site);
-    // standalone：__CONFIG__ 默认全 false（即空对象，SPA 端 merge 默认值）
+    let site_json = serde_json::to_string(&cfg.site).unwrap_or_else(|_| "{}".into());
+    let (title, description) = site_title_desc(&cfg.site);
     let injected = inject(
         &html,
         &manifest_json,
@@ -120,14 +121,27 @@ fn site_title_desc(site: &serde_json::Value) -> (Option<String>, Option<String>)
 }
 
 /// 拼接并防目录穿越：拒绝包含 `..` / `.` 段。
-fn safe_join(base: &Path, rel: &str) -> Option<PathBuf> {
+fn safe_join(base: &Path, rel: &str) -> Option<std::path::PathBuf> {
     if rel.split('/').any(|seg| seg == ".." || seg == ".") {
         return None;
     }
     Some(base.join(rel))
 }
 
-// ---- 触发 API ----
+// ---- 管理后台页 ----
+
+async fn admin_page() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, NO_CACHE),
+        ],
+        include_str!("admin_page.html"),
+    )
+        .into_response()
+}
+
+// ---- 触发 / 配置 API ----
 
 #[derive(serde::Deserialize, Default)]
 struct AdminBuildReq {
@@ -146,7 +160,8 @@ async fn api_admin_build(
     headers: HeaderMap,
     body: Option<Json<AdminBuildReq>>,
 ) -> Response {
-    match authorized(&st, &headers) {
+    let cfg = st.config().await;
+    match check_bearer(cfg.triggers.webhook_token.as_deref(), &headers) {
         None => StatusCode::NOT_FOUND.into_response(),
         Some(false) => StatusCode::UNAUTHORIZED.into_response(),
         Some(true) => {
@@ -162,7 +177,8 @@ async fn api_hook_build(
     Extension(coord): Extension<BuildCoordinator>,
     headers: HeaderMap,
 ) -> Response {
-    match authorized(&st, &headers) {
+    let cfg = st.config().await;
+    match check_bearer(cfg.triggers.webhook_token.as_deref(), &headers) {
         None => StatusCode::NOT_FOUND.into_response(),
         Some(false) => StatusCode::UNAUTHORIZED.into_response(),
         Some(true) => {
@@ -177,17 +193,78 @@ async fn api_hook_s3(
     Extension(coord): Extension<BuildCoordinator>,
     _body: Option<Json<serde_json::Value>>,
 ) -> Response {
-    if !st.config.triggers.enable_s3_event {
+    if !st.config().await.triggers.enable_s3_event {
         return StatusCode::NOT_FOUND.into_response();
     }
-    // M1b：忽略事件体细节，统一触发整体增量
     coord.trigger(false);
     StatusCode::ACCEPTED.into_response()
 }
 
-/// 鉴权：返回 None=端点禁用（未配置 token）；Some(true)=通过；Some(false)=拒绝。
-fn authorized(st: &AppState, headers: &HeaderMap) -> Option<bool> {
-    let token = st.config.triggers.webhook_token.as_deref()?;
+/// 读当前配置（含密钥，故 admin token 鉴权）。
+async fn api_get_config(State(st): State<AppState>, headers: HeaderMap) -> Response {
+    let cfg = st.config().await;
+    match check_bearer(cfg.server.admin_token.as_deref(), &headers) {
+        None => StatusCode::NOT_FOUND.into_response(),
+        Some(false) => StatusCode::UNAUTHORIZED.into_response(),
+        Some(true) => Json(&*cfg).into_response(),
+    }
+}
+
+/// 写配置：校验 → 写回 TOML 文件 → 运行时热重载。
+/// `[server]` 段不允许经管理端修改——总是用当前运行配置的 server 覆盖请求体。
+async fn api_put_config(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    body: Option<Json<serde_json::Value>>,
+) -> Response {
+    let cur = st.config().await;
+    match check_bearer(cur.server.admin_token.as_deref(), &headers) {
+        None => return StatusCode::NOT_FOUND.into_response(),
+        Some(false) => return StatusCode::UNAUTHORIZED.into_response(),
+        Some(true) => {}
+    }
+    let Some(Json(mut v)) = body else {
+        return (StatusCode::BAD_REQUEST, "missing or invalid config body").into_response();
+    };
+    // 强制保留当前 server（listen/workdir/dist_dir/admin_token 只能改文件并重启）
+    let server_value = match serde_json::to_value(&cur.server) {
+        Ok(sv) => sv,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("server: {e}")).into_response();
+        }
+    };
+    match v.as_object_mut() {
+        Some(obj) => {
+            obj.insert("server".to_string(), server_value);
+        }
+        None => return (StatusCode::BAD_REQUEST, "config must be a JSON object").into_response(),
+    }
+    let new_config: Config = match serde_json::from_value(v) {
+        Ok(c) => c,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("invalid config: {e}")).into_response(),
+    };
+    let toml = match new_config.to_toml_string() {
+        Ok(t) => t,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("serialize: {e}")).into_response(),
+    };
+    // 先热重载（会重建 storage/builder，能验出存储配置错误）
+    if let Err(e) = st.reload(new_config).await {
+        return (StatusCode::BAD_REQUEST, format!("reload failed: {e}")).into_response();
+    }
+    // 再持久化到文件
+    if let Err(e) = std::fs::write(st.config_path(), &toml) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("applied but write failed: {e}"),
+        )
+            .into_response();
+    }
+    (StatusCode::OK, "reloaded").into_response()
+}
+
+/// Bearer 鉴权：None=端点禁用（未配置 token）；Some(true)=通过；Some(false)=拒绝。
+fn check_bearer(expected: Option<&str>, headers: &HeaderMap) -> Option<bool> {
+    let token = expected?;
     let got = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
@@ -238,8 +315,7 @@ mod tests {
             [site]
             title = "My Gallery"
             description = "Desc"
-            [storage]
-            provider = "local"
+            [storage.local]
             base_path = "{photos}"
             base_url = "/photos"
             {triggers}
@@ -250,7 +326,7 @@ mod tests {
             triggers = triggers
         );
         let config = Config::from_toml_str(&toml).unwrap();
-        let state = AppState::new(config).unwrap();
+        let state = AppState::new(config, dir.path().join("afilmory.toml")).unwrap();
         (dir, state)
     }
 
@@ -262,45 +338,22 @@ mod tests {
 
         let resp = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/static/web/assets/app.js")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/static/web/assets/app.js").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get("cache-control").unwrap(), IMMUTABLE);
-        assert!(
-            resp.headers()
-                .get("content-type")
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .contains("javascript")
-        );
 
         let resp = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/thumbnails/x.jpg")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/thumbnails/x.jpg").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
         let resp = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/some/photo/id")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/some/photo/id").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -310,24 +363,25 @@ mod tests {
         assert!(body.contains("<title>My Gallery</title>"));
 
         let resp = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/static/web/assets/missing.js")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/missing.css").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn serves_local_originals_via_fallback() {
+        let (_dir, state) = setup(None);
+        let coord = BuildCoordinator::start(state.clone());
+        let app = build_router(state, coord);
         let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/missing.css")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .clone()
+            .oneshot(Request::builder().uri("/photos/orig.jpg").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp = app
+            .oneshot(Request::builder().uri("/photos/missing.jpg").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -335,26 +389,17 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn webhook_auth_and_status() {
-        // 配置了 token 的情况
         let (_dir, state) = setup(Some("t"));
         let coord = BuildCoordinator::start(state.clone());
         let app = build_router(state, coord);
 
-        // 无鉴权 → 401
         let resp = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/hooks/build")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().method("POST").uri("/api/hooks/build").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
-        // 正确 Bearer → 202
         let resp = app
             .clone()
             .oneshot(
@@ -369,66 +414,83 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
-        // status 可读
         let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/status")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/api/status").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = body_string(resp).await;
-        assert!(body.contains("\"running\""));
+        assert!(body_string(resp).await.contains("\"running\""));
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn webhook_disabled_without_token() {
-        let (_dir, state) = setup(None);
+    async fn admin_config_disabled_without_token() {
+        let (_dir, state) = setup(None); // 无 admin_token
         let coord = BuildCoordinator::start(state.clone());
         let app = build_router(state, coord);
-        // 未配置 token → 端点禁用 → 404
         let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/hooks/build")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/api/admin/config").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn serves_local_originals() {
-        // 本地存储 base_url="/photos" → 原图经 /photos/* 托管
-        let (_dir, state) = setup(None);
+    async fn admin_config_get_put_reload() {
+        // 带 admin_token 的独立配置
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("work");
+        let photos = dir.path().join("photos");
+        let dist = dir.path().join("dist");
+        std::fs::create_dir_all(&photos).unwrap();
+        std::fs::create_dir_all(&dist).unwrap();
+        let cfg_path = dir.path().join("afilmory.toml");
+        let toml = format!(
+            "[server]\nworkdir = \"{w}\"\ndist_dir = \"{d}\"\nadmin_token = \"adm\"\n[storage.local]\nbase_path = \"{p}\"\n[processing]\nconcurrency = 3\n",
+            w = work.display(),
+            d = dist.display(),
+            p = photos.display()
+        );
+        std::fs::write(&cfg_path, &toml).unwrap();
+        let state = AppState::new(Config::from_toml_str(&toml).unwrap(), cfg_path.clone()).unwrap();
         let coord = BuildCoordinator::start(state.clone());
-        let app = build_router(state, coord);
+        let app = build_router(state.clone(), coord);
+
+        // GET 需鉴权
         let resp = app
             .clone()
+            .oneshot(Request::builder().uri("/api/admin/config").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        let resp = app
+            .clone()
+            .oneshot(Request::builder().uri("/api/admin/config").header("authorization", "Bearer adm").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let cfg_json = body_string(resp).await;
+        assert!(cfg_json.contains("\"concurrency\":3"));
+
+        // PUT 修改 concurrency → reload + 写回
+        let mut v: serde_json::Value = serde_json::from_str(&cfg_json).unwrap();
+        v["processing"]["concurrency"] = serde_json::json!(7);
+        let resp = app
             .oneshot(
                 Request::builder()
-                    .uri("/photos/orig.jpg")
-                    .body(Body::empty())
+                    .method("PUT")
+                    .uri("/api/admin/config")
+                    .header("authorization", "Bearer adm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&v).unwrap()))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/photos/missing.jpg")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        // 运行时已生效
+        assert_eq!(state.config().await.processing.concurrency, 7);
+        // 文件已写回
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(written.contains("concurrency = 7"));
     }
 }

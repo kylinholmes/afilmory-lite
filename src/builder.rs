@@ -10,7 +10,7 @@ use crate::exif::{ExifExtractor, ExiftoolExtractor};
 use crate::manifest::{
     PhotoManifestItem, filter_tasks, handle_deleted, load_manifest, save_manifest,
 };
-use crate::pipeline::{PipelineDeps, process_photo};
+use crate::pipeline::{Geocoder, PipelineDeps, process_photo};
 use crate::storage::{LocalProvider, S3Provider, StorageProvider, detect_live_photos};
 
 #[derive(Default)]
@@ -119,6 +119,12 @@ impl Builder {
             HashMap::new()
         });
 
+        // 地理编码器：单次构建共享（缓存/限速跨照片生效）；关闭时 locate() 恒 None
+        let geocoder = Arc::new(Geocoder::new(&self.config.geocoding));
+        if geocoder.enabled() {
+            tracing::info!("geocoding enabled");
+        }
+
         let sem = Arc::new(Semaphore::new(self.config.processing.concurrency.max(1)));
         let mut handles = Vec::new();
         for obj in tasks.iter().cloned().cloned() {
@@ -128,6 +134,7 @@ impl Builder {
             let processing = self.config.processing.clone();
             let thumb_dir = self.thumb_dir.clone();
             let live_map = live_map.clone();
+            let geocoder = geocoder.clone();
             handles.push(tokio::spawn(async move {
                 let _permit = permit;
                 let deps = PipelineDeps {
@@ -136,6 +143,7 @@ impl Builder {
                     processing: &processing,
                     thumb_dir: &thumb_dir,
                     live_map: live_map.as_ref(),
+                    geocoder: geocoder.as_ref(),
                 };
                 (obj.key.clone(), process_photo(&obj, &deps).await)
             }));

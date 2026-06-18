@@ -56,16 +56,16 @@ impl BuildCoordinator {
     }
 }
 
-/// 启动定时轮询（interval_secs > 0 时）。
-pub fn spawn_poll(coord: BuildCoordinator, interval_secs: u64) {
-    if interval_secs == 0 {
-        return;
-    }
+/// 启动定时轮询。间隔从配置**动态读取**（热重载可改）；0=关闭，但仍每 30s 回看一次以便热开启。
+pub fn spawn_poll(coord: BuildCoordinator, state: AppState) {
     tokio::spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(interval_secs));
-        tick.tick().await; // interval 的首个 tick 立即返回，跳过
         loop {
-            tick.tick().await;
+            let secs = state.config().await.triggers.poll_interval_secs;
+            if secs == 0 {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                continue;
+            }
+            tokio::time::sleep(Duration::from_secs(secs)).await;
             coord.trigger(false);
         }
     });
@@ -93,14 +93,14 @@ mod tests {
             r#"
             [server]
             workdir = "{w}"
-            [storage]
-            provider = "local"
+            [storage.local]
             base_path = "{p}"
         "#,
             w = work.display(),
             p = photos.display()
         );
-        let state = AppState::new(Config::from_toml_str(&toml).unwrap()).unwrap();
+        let state =
+            AppState::new(Config::from_toml_str(&toml).unwrap(), dir.path().join("c.toml")).unwrap();
         let coord = BuildCoordinator::start(state.clone());
         coord.trigger(false);
 

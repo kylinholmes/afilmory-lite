@@ -13,3 +13,9 @@
 
 # 测试 / 真实照片
 images/
+
+# admin-web 构建依赖与中间产物（最终产物 src/server/admin_page.html 需提交）
+/admin-web/node_modules
+/admin-web/dist
+/admin-web/bun.lock
+/admin-web/src/geist-font.css

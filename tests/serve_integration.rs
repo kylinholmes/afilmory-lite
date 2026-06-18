@@ -43,15 +43,15 @@ async fn serve_injects_built_manifest_and_thumbnail() {
         dist_dir = "{dist}"
         [site]
         title = "Gallery"
-        [storage]
-        provider = "local"
+        [storage.local]
         base_path = "{photos}"
     "#,
         work = work.display(),
         dist = dist.display(),
         photos = photos.display()
     );
-    let state = AppState::new(Config::from_toml_str(&toml).unwrap()).unwrap();
+    let state =
+        AppState::new(Config::from_toml_str(&toml).unwrap(), dir.path().join("afilmory.toml")).unwrap();
 
     // 构建（直接调用，确定性）
     let r = state

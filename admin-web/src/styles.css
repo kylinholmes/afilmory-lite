@@ -1,0 +1,82 @@
+@import 'tailwindcss';
+/* Afilmory 同款 Apple UIKit 语义色: text-text / bg-fill / bg-material 等（含 [data-theme=dark]） */
+@import 'tailwindcss-uikit-colors/v4/macos.css';
+/* 自托管 Geist 字体（gen-font.mjs 生成，base64 内联）*/
+@import './geist-font.css';
+
+/* 扫描页面以生成用到的 class */
+@source './admin.html';
+
+@theme {
+  /* 背景色旋钮（想更深改更小，如 #0a0a0b；上游 Afilmory 是 #1c1c1e）*/
+  --color-background: #111113;
+  --color-accent: #007aff;
+  --font-sans: Geist, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* ▼▼▼ 圆角统一旋钮：想更尖就改小（0px = 全直角），想更圆就改大 ▼▼▼ */
+  --ui-radius: 2px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+}
+
+/* 复用 Afilmory 的组件类组合（见 docs/afilmory-ui-style.md），保持 HTML 干净 */
+@layer components {
+  /* Apple 设置风分组卡片：细边 + 轻填充 + 行分隔，无辉光/无重阴影 */
+  .card {
+    @apply divide-y divide-fill-tertiary/60 overflow-hidden border border-fill-tertiary bg-fill-secondary;
+    border-radius: var(--ui-radius);
+  }
+  .group {
+    @apply divide-y divide-fill-tertiary/60;
+  }
+  .row {
+    @apply grid grid-cols-[116px_1fr] items-center gap-3 px-3.5 py-2;
+  }
+  .row > label {
+    @apply text-sm text-text-secondary;
+  }
+  /* Afilmory Input 同款 */
+  .field {
+    @apply w-full border border-fill-tertiary bg-background px-3 py-2 text-sm text-text outline-none transition;
+    @apply placeholder:text-text-tertiary/60 focus:border-accent/50 focus:ring-2 focus:ring-accent/40;
+    border-radius: var(--ui-radius);
+  }
+  /* Afilmory Button 同款 */
+  .btn-primary {
+    @apply bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent/90 active:scale-95 disabled:opacity-50;
+    border-radius: var(--ui-radius);
+  }
+  .btn-ghost {
+    @apply bg-fill px-4 py-2 text-sm font-medium text-text transition hover:bg-fill-secondary active:scale-95;
+    border-radius: var(--ui-radius);
+  }
+  /* 分段控件（local/s3）：bg-fill-tertiary 容器，选中滑到 bg-background */
+  .seg {
+    @apply inline-flex w-fit bg-fill-tertiary p-0.5;
+    border-radius: calc(var(--ui-radius) + 2px);
+  }
+  .seg label {
+    @apply cursor-pointer px-3.5 py-1 text-sm text-text-secondary transition;
+    @apply has-[:checked]:bg-background has-[:checked]:text-text has-[:checked]:shadow-sm;
+    border-radius: var(--ui-radius);
+  }
+  /* accentColor 取色器：原生 color input 去丑边，做成与圆角一致的小色块 */
+  .swatch {
+    @apply size-8 shrink-0 cursor-pointer appearance-none border border-fill-tertiary bg-transparent p-0;
+    border-radius: var(--ui-radius);
+  }
+  .swatch::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  .swatch::-webkit-color-swatch {
+    border: 0;
+    border-radius: var(--ui-radius);
+  }
+  .swatch::-moz-color-swatch {
+    border: 0;
+    border-radius: var(--ui-radius);
+  }
+}

@@ -22,8 +22,7 @@ async fn end_to_end_local_build() {
         [server]
         workdir = "{work}"
         dist_dir = ""
-        [storage]
-        provider = "local"
+        [storage.local]
         base_path = "{photos}"
         base_url = "/photos"
         [processing]

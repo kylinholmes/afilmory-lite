@@ -64,14 +64,16 @@ TOML，完整示例见 [`docker/afilmory.example.toml`](docker/afilmory.example.
 | `[server]` | `listen` | 监听地址，默认 `0.0.0.0:8080` |
 | | `workdir` | 存放 `manifest.json` + `thumbnails/`（需持久化） |
 | | `dist_dir` | 前端静态壳目录（Docker 内置为 `/app/web/dist`） |
+| | `admin_token` | 设了才启用 `/admin` 配置页 + 配置读写（Bearer 鉴权），运行时热重载 |
 | `[site]` | `name`/`title`/`description`/`accentColor`/… | 注入 `window.__SITE_CONFIG__`（站点信息） |
-| `[storage]` | `provider = "local"` | `base_path` 照片目录；`base_url`（如 `/photos`，根路径则由本服务托管原图） |
-| | `provider = "s3"` | `bucket`/`region`/`endpoint`/`access_key_id`/`secret_access_key`/`prefix`/`custom_domain`… 兼容 AWS / MinIO / Cloudflare R2 / Wasabi |
+| `[storage.local]` | `base_path` / `base_url` | 本地目录；`base_url` 为根路径（如 `/photos`）时由本服务托管原图 |
+| `[storage.s3]` | `bucket`/`region`/`endpoint`/`access_key_id`/`secret_access_key`/`prefix`/`custom_domain`… | S3 / 兼容 AWS / MinIO / Cloudflare R2 / Wasabi |
 | `[processing]` | `concurrency`/`thumbnail_width`(600)/`thumbnail_quality`(100)/`enable_live_photo` | 处理参数 |
 | `[exif]` | `exiftool_path` | exiftool 可执行路径（默认 `exiftool`） |
 | `[triggers]` | `poll_interval_secs` | >0 开启定时轮询 |
 | | `webhook_token` | 设了才启用 `/api/hooks/build` 与 `/api/admin/build`（Bearer 鉴权） |
 | | `enable_s3_event` | 启用 `/api/hooks/s3` |
+| `[geocoding]` | `enabled`/`provider`/`mapbox_token`/`nominatim_base_url`/`language`/`cache_precision` | GPS→城市/国家 反查，写入 `location`；默认关。`provider=auto` 有 token 用 Mapbox 否则 Nominatim |
 
 最小示例（本地照片）：
 ```toml
@@ -81,11 +83,12 @@ workdir = "./data"
 dist_dir = "./web-dist"
 [site]
 title = "My Gallery"
-[storage]
-provider = "local"
+[storage.local]
 base_path = "./photos"
 base_url = "/photos"
 ```
+
+**在线改配置（/admin）**：`[server]` 配了 `admin_token` 后，浏览器打开 `http://host:8080/admin` 即可在线编辑配置并**热重载**——除 `listen`（端口，需重启）外其余即时生效。底层接口：`GET` / `PUT /api/admin/config`（Bearer admin token；含密钥故需鉴权）。
 
 ---
 

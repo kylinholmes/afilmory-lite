@@ -4,7 +4,7 @@ use crate::config::ProcessingConfig;
 use crate::error::{Error, Result};
 use crate::exif::ExifExtractor;
 use crate::manifest::{PhotoManifestItem, VideoSource};
-use crate::pipeline::{decode, info, motion_photo, thumbhash, thumbnail, tone};
+use crate::pipeline::{Geocoder, decode, info, motion_photo, thumbhash, thumbnail, tone};
 use crate::storage::{StorageObject, StorageProvider};
 
 pub struct PipelineDeps<'a> {
@@ -15,6 +15,8 @@ pub struct PipelineDeps<'a> {
     pub thumb_dir: &'a std::path::Path,
     /// Live Photo 配对：图片 key -> 视频对象。
     pub live_map: &'a std::collections::HashMap<String, StorageObject>,
+    /// 反查地理编码器（跨照片共享缓存/限速）；关闭时 locate() 恒返回 None。
+    pub geocoder: &'a Geocoder,
 }
 
 /// 处理单张照片，写出缩略图文件，返回 manifest item。失败返回 Err（调用方记失败计数）。
@@ -96,6 +98,9 @@ pub async fn process_photo(
     let tone = tone::analyze_tone(&decoded.image);
     let ms_tone = t_step.elapsed().as_millis();
 
+    // 地理编码（GPS → 城市/国家）；关闭或无 GPS 时为 None
+    let location = deps.geocoder.locate(exif_value.as_ref()).await;
+
     // info
     let pinfo = info::extract_info(key, exif_date.as_deref());
 
@@ -153,7 +158,7 @@ pub async fn process_photo(
         digest: Some(digest),
         exif: exif_value,
         tone_analysis: Some(tone),
-        location: None,
+        location,
         video,
         is_hdr,
         og_image_url: None,

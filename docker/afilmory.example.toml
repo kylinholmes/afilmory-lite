@@ -5,6 +5,7 @@
 listen = "0.0.0.0:8080"
 workdir = "/app/data"          # manifest.json + thumbnails/（建议挂卷持久化）
 dist_dir = "/app/web/dist"     # 镜像内已构建好的 SPA 静态壳
+# admin_token = "change-me"    # 设置后启用 /admin 配置页 + GET/PUT /api/admin/config（在线改配置、运行时热重载）
 
 [site]                         # 运行时注入 window.__SITE_CONFIG__
 name = "Afilmory Lite"
@@ -12,10 +13,10 @@ title = "Afilmory Lite"
 description = "Photo gallery served by afilmory-lite"
 accent_color = "#007bff"
 
+# 存储二选一：用哪个就写哪个子表（[storage.local] 或 [storage.s3]，不要同时写）。
 # 本地目录（把照片挂到 /app/photos）。
 # base_url 设为根路径（如 /photos）时，本服务会在该前缀下托管原图（缩略图走 /thumbnails）。
-[storage]
-provider = "local"
+[storage.local]
 base_path = "/app/photos"
 base_url = "/photos"
 
@@ -24,9 +25,18 @@ poll_interval_secs = 0         # >0 开启定时轮询（秒）
 # webhook_token = "change-me"  # 设置后启用 POST /api/hooks/build 与 /api/admin/build（Bearer 鉴权）
 enable_s3_event = false        # 启用 POST /api/hooks/s3
 
-# ---- S3 / 兼容存储（已支持；原图直连 CDN/桶，无需本地服务）。把上面的 [storage] 换成这段 ----
-# [storage]
-# provider = "s3"
+# 反查地理编码（照片 GPS → 城市/国家，写入 manifest 的 location 字段）。
+# 默认关闭：开启后构建期会发网络请求、拖慢构建；只对新增/改动的照片生效（旧照片需 --force）。
+[geocoding]
+enabled = false
+provider = "auto"              # auto=有 mapbox_token 用 Mapbox，否则 Nominatim；也可 "mapbox" / "nominatim"
+# mapbox_token = ""            # 有则更快（100ms/次）；否则走免费 Nominatim（限速 1 次/秒）
+nominatim_base_url = "https://nominatim.openstreetmap.org"
+# language = "zh"              # 可选 BCP47；省略=服务默认
+cache_precision = 4            # 坐标缓存精度（小数位），4≈11m，相同坐标只查一次
+
+# ---- S3 / 兼容存储（原图直连 CDN/桶，无需本地服务）。改用这个子表（删掉上面的 [storage.local]）----
+# [storage.s3]
 # bucket = "my-bucket"
 # region = "us-east-1"
 # endpoint = "https://s3.us-east-1.amazonaws.com"   # AWS 可省略；MinIO/R2/Wasabi 填各自 endpoint（走 path-style）

@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="zh" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>afilmory-lite · 配置</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="min-h-screen bg-background font-sans text-text antialiased">
+
+<!-- 固定顶栏：左标题/状态，右上角唯一动作=保存（颜色随 accentColor）-->
+<header class="sticky top-0 z-20 border-b border-fill-tertiary bg-background/85 backdrop-blur-md">
+  <div class="mx-auto flex h-14 max-w-4xl items-center justify-between gap-4 px-6">
+    <div class="flex min-w-0 items-baseline gap-2">
+      <span class="font-semibold tracking-tight">afilmory-lite</span>
+      <span class="text-sm text-text-tertiary">配置</span>
+      <span id="msg" class="truncate text-xs text-text-tertiary"></span>
+    </div>
+    <div class="flex shrink-0 items-center gap-2.5">
+      <input id="token" type="password" placeholder="admin token" autocomplete="off"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();loadConfig();}"
+             class="field h-8 w-[180px] py-1 text-xs" />
+      <button id="saveBtn" type="button" onclick="saveConfig()" class="btn-primary hidden">保存</button>
+    </div>
+  </div>
+</header>
+
+<main class="mx-auto max-w-4xl px-6 py-8">
+  <div id="gate" class="py-28 text-center text-sm text-text-tertiary">输入 admin token 后回车，载入配置</div>
+
+  <form id="form" class="hidden columns-2 gap-4">
+    <!-- Site -->
+    <section class="mb-4 break-inside-avoid">
+      <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Site</h2>
+      <div class="card">
+        <div class="row"><label>name</label><input id="site_name" class="field" /></div>
+        <div class="row"><label>title</label><input id="site_title" class="field" /></div>
+        <div class="row"><label>description</label><input id="site_desc" class="field" /></div>
+        <div class="row"><label>url</label><input id="site_url" placeholder="https://example.com" class="field" /></div>
+        <div class="row"><label>accentColor</label>
+          <div class="flex items-center gap-2">
+            <input id="site_accent_picker" type="color" value="#007aff" class="swatch" oninput="onAccentPick(this.value)" aria-label="取色器" />
+            <input id="site_accent" placeholder="#007aff" class="field" oninput="syncAccentPicker()" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Author -->
+    <section class="mb-4 break-inside-avoid">
+      <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Author</h2>
+      <div class="card">
+        <div class="row"><label>name</label><input id="author_name" class="field" /></div>
+        <div class="row"><label>url</label><input id="author_url" placeholder="https://your.site" class="field" /></div>
+        <div class="row"><label>avatar</label><input id="author_avatar" placeholder="头像 URL" class="field" /></div>
+      </div>
+    </section>
+
+    <!-- Social -->
+    <section class="mb-4 break-inside-avoid">
+      <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Social</h2>
+      <div class="card">
+        <div class="row"><label>github</label><input id="social_github" placeholder="handle 或 URL" class="field" /></div>
+        <div class="row"><label>twitter</label><input id="social_twitter" placeholder="handle 或 URL" class="field" /></div>
+      </div>
+    </section>
+
+    <!-- Storage -->
+    <section class="mb-4 break-inside-avoid">
+      <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Storage</h2>
+      <div class="card">
+        <div class="row">
+          <label>provider</label>
+          <div class="seg">
+            <label><input type="radio" name="provider" value="local" class="hidden" onchange="toggleProvider()">local</label>
+            <label><input type="radio" name="provider" value="s3" class="hidden" onchange="toggleProvider()">s3</label>
+          </div>
+        </div>
+        <div id="local-fields" class="group">
+          <div class="row"><label>base_path</label><input id="l_base_path" class="field" /></div>
+          <div class="row"><label>base_url</label><input id="l_base_url" placeholder="/photos" class="field" /></div>
+          <div class="row"><label>exclude_regex</label><input id="l_exclude" class="field" /></div>
+          <div class="row"><label>max_file_limit</label><input id="l_max" type="number" class="field" /></div>
+        </div>
+        <div id="s3-fields" class="group hidden">
+          <div class="row"><label>bucket</label><input id="s3_bucket" class="field" /></div>
+          <div class="row"><label>region</label><input id="s3_region" placeholder="us-east-1" class="field" /></div>
+          <div class="row"><label>endpoint</label><input id="s3_endpoint" placeholder="MinIO/R2 填" class="field" /></div>
+          <div class="row"><label>access_key_id</label><input id="s3_ak" class="field" /></div>
+          <div class="row"><label>secret_access_key</label><input id="s3_sk" type="password" class="field" /></div>
+          <div class="row"><label>session_token</label><input id="s3_session" class="field" /></div>
+          <div class="row"><label>prefix</label><input id="s3_prefix" class="field" /></div>
+          <div class="row"><label>custom_domain</label><input id="s3_cdn" class="field" /></div>
+          <div class="row"><label>download_concurrency</label><input id="s3_dc" type="number" placeholder="16" class="field" /></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Processing -->
+    <section class="mb-4 break-inside-avoid">
+      <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Processing</h2>
+      <div class="card">
+        <div class="row"><label>concurrency</label><input id="p_conc" type="number" class="field" /></div>
+        <div class="row"><label>thumbnail_width</label><input id="p_tw" type="number" class="field" /></div>
+        <div class="row"><label>thumbnail_quality</label><input id="p_tq" type="number" class="field" /></div>
+        <div class="row"><label>enable_live_photo</label><input id="p_live" type="checkbox" class="size-[18px] accent-accent" /></div>
+      </div>
+    </section>
+
+    <!-- Exif -->
+    <section class="mb-4 break-inside-avoid">
+      <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Exif</h2>
+      <div class="card">
+        <div class="row"><label>exiftool_path</label><input id="e_path" class="field" /></div>
+      </div>
+    </section>
+
+    <!-- Triggers -->
+    <section class="mb-4 break-inside-avoid">
+      <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Triggers</h2>
+      <div class="card">
+        <div class="row"><label>poll_interval_secs</label><input id="t_poll" type="number" placeholder="0=off" class="field" /></div>
+        <div class="row"><label>webhook_token</label><input id="t_hook" class="field" /></div>
+        <div class="row"><label>enable_s3_event</label><input id="t_s3ev" type="checkbox" class="size-[18px] accent-accent" /></div>
+      </div>
+    </section>
+
+    <!-- Geocoding -->
+    <section class="mb-4 break-inside-avoid">
+      <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Geocoding</h2>
+      <div class="card">
+        <div class="row"><label>enabled</label><input id="g_en" type="checkbox" class="size-[18px] accent-accent" /></div>
+        <div class="row"><label>provider</label>
+          <select id="g_provider" class="field">
+            <option value="auto">auto</option>
+            <option value="mapbox">mapbox</option>
+            <option value="nominatim">nominatim</option>
+          </select>
+        </div>
+        <div class="row"><label>mapbox_token</label><input id="g_token" type="password" placeholder="auto 时有则用 Mapbox" class="field" /></div>
+        <div class="row"><label>nominatim_base_url</label><input id="g_nomi" class="field" /></div>
+        <div class="row"><label>language</label><input id="g_lang" placeholder="zh / en，可空" class="field" /></div>
+        <div class="row"><label>cache_precision</label><input id="g_prec" type="number" class="field" /></div>
+      </div>
+    </section>
+
+    <!-- Build -->
+    <section class="mb-4 break-inside-avoid">
+      <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Build</h2>
+      <div class="card">
+        <div class="flex items-center gap-2 px-3.5 py-2.5">
+          <button type="button" onclick="triggerBuild(false)" class="btn-ghost">增量构建</button>
+          <button type="button" onclick="triggerBuild(true)" class="btn-ghost">强制全量</button>
+        </div>
+        <div id="status" class="px-3.5 py-2 text-xs text-text-tertiary">—</div>
+      </div>
+    </section>
+  </form>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const TOKEN_KEY = 'afilmory_admin_token';
+let loadedSite = {};
+
+function token() { return $('token').value.trim(); }
+function authHeaders() { return { 'Authorization': 'Bearer ' + token() }; }
+function msg(text, cls) { const m = $('msg'); m.textContent = text; m.className = 'truncate text-xs ' + (cls || 'text-text-tertiary'); }
+const numOrUndef = (id) => { const v = $(id).value.trim(); return v === '' ? undefined : Number(v); };
+const strOrUndef = (id) => { const v = $(id).value.trim(); return v === '' ? undefined : v; };
+
+// accentColor → 实时驱动全站强调色（保存按钮 / 焦点环 / 勾选框等都用 --color-accent 变量）
+function applyAccent(v) {
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) document.documentElement.style.setProperty('--color-accent', v);
+}
+
+function showForm() { $('gate').classList.add('hidden'); $('form').classList.remove('hidden'); $('saveBtn').classList.remove('hidden'); }
+
+// dev 预览：?demo=1 用示例数据展开整个表单（无需后端），用于查看样式
+function demoFill() {
+  fillForm({
+    server: { listen: '0.0.0.0:8080', workdir: './data', dist_dir: './web-dist', admin_token: 'demo-token' },
+    site: { name: 'My Gallery', title: 'My Gallery', description: '一个示例画廊', url: 'https://example.com', accentColor: '#007aff', author: { name: '你的名字', url: 'https://your.site', avatar: '' }, social: { github: 'your_handle', twitter: 'your_handle' } },
+    storage: { local: { base_path: './photos', base_url: '/photos' } },
+    processing: { concurrency: 10, thumbnail_width: 600, thumbnail_quality: 100, enable_live_photo: true },
+    exif: { exiftool_path: 'exiftool' },
+    triggers: { poll_interval_secs: 0, webhook_token: '', enable_s3_event: false },
+    geocoding: { enabled: false, provider: 'auto', nominatim_base_url: 'https://nominatim.openstreetmap.org', cache_precision: 4 },
+  });
+  $('token').value = 'demo-token';
+  showForm();
+  msg('DEMO 预览（无后端）');
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (new URLSearchParams(location.search).has('demo')) { demoFill(); return; }
+  const saved = localStorage.getItem(TOKEN_KEY);
+  if (saved) { $('token').value = saved; loadConfig(); }
+});
+
+function toggleProvider() {
+  const p = document.querySelector('input[name=provider]:checked')?.value;
+  $('local-fields').classList.toggle('hidden', p !== 'local');
+  $('s3-fields').classList.toggle('hidden', p !== 's3');
+}
+
+// accentColor 色块 ↔ 文本框 双向同步（并实时套用）
+function onAccentPick(v) { $('site_accent').value = v; applyAccent(v); }
+function syncAccentPicker() {
+  const v = $('site_accent').value.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) { $('site_accent_picker').value = v; applyAccent(v); }
+}
+
+async function loadConfig() {
+  if (!token()) { msg('请输入 admin token', 'text-red'); return; }
+  msg('载入中…');
+  try {
+    const r = await fetch('/api/admin/config', { headers: authHeaders() });
+    if (r.status === 401) { msg('token 错误', 'text-red'); return; }
+    if (r.status === 404) { msg('未配置 admin_token，管理接口已关闭', 'text-red'); return; }
+    if (!r.ok) { msg('载入失败：' + r.status, 'text-red'); return; }
+    const c = await r.json();
+    localStorage.setItem(TOKEN_KEY, token());
+    fillForm(c);
+    showForm();
+    msg('已载入', 'text-green');
+    pollStatus();
+  } catch (e) { msg('网络错误：' + e, 'text-red'); }
+}
+
+function fillForm(c) {
+  loadedSite = c.site || {};
+  $('site_name').value = loadedSite.name ?? ''; $('site_title').value = loadedSite.title ?? '';
+  $('site_desc').value = loadedSite.description ?? ''; $('site_url').value = loadedSite.url ?? '';
+  $('site_accent').value = loadedSite.accentColor ?? '';
+  syncAccentPicker();
+  const au = loadedSite.author || {};
+  $('author_name').value = au.name ?? ''; $('author_url').value = au.url ?? ''; $('author_avatar').value = au.avatar ?? '';
+  const so = loadedSite.social || {};
+  $('social_github').value = so.github ?? ''; $('social_twitter').value = so.twitter ?? '';
+  const st = c.storage || {};
+  const provider = st.local ? 'local' : (st.s3 ? 's3' : 'local');
+  document.querySelector(`input[name=provider][value=${provider}]`).checked = true;
+  const lo = st.local || {}, s3 = st.s3 || {};
+  $('l_base_path').value = lo.base_path ?? ''; $('l_base_url').value = lo.base_url ?? '';
+  $('l_exclude').value = lo.exclude_regex ?? ''; $('l_max').value = lo.max_file_limit ?? '';
+  $('s3_bucket').value = s3.bucket ?? ''; $('s3_region').value = s3.region ?? '';
+  $('s3_endpoint').value = s3.endpoint ?? ''; $('s3_ak').value = s3.access_key_id ?? '';
+  $('s3_sk').value = s3.secret_access_key ?? ''; $('s3_session').value = s3.session_token ?? '';
+  $('s3_prefix').value = s3.prefix ?? ''; $('s3_cdn').value = s3.custom_domain ?? '';
+  $('s3_dc').value = s3.download_concurrency ?? '';
+  const p = c.processing || {};
+  $('p_conc').value = p.concurrency ?? ''; $('p_tw').value = p.thumbnail_width ?? '';
+  $('p_tq').value = p.thumbnail_quality ?? ''; $('p_live').checked = p.enable_live_photo ?? true;
+  $('e_path').value = (c.exif || {}).exiftool_path ?? '';
+  const t = c.triggers || {};
+  $('t_poll').value = t.poll_interval_secs ?? 0; $('t_hook').value = t.webhook_token ?? '';
+  $('t_s3ev').checked = t.enable_s3_event ?? false;
+  const g = c.geocoding || {};
+  $('g_en').checked = g.enabled ?? false; $('g_provider').value = g.provider ?? 'auto';
+  $('g_token').value = g.mapbox_token ?? ''; $('g_nomi').value = g.nominatim_base_url ?? 'https://nominatim.openstreetmap.org';
+  $('g_lang').value = g.language ?? ''; $('g_prec').value = g.cache_precision ?? 4;
+  toggleProvider();
+}
+
+function buildConfig() {
+  const site = { ...loadedSite };
+  for (const [k, id] of [['name','site_name'],['title','site_title'],['description','site_desc'],['url','site_url'],['accentColor','site_accent']]) {
+    const v = $(id).value.trim(); if (v) site[k] = v; else delete site[k];
+  }
+  const author = { ...(loadedSite.author || {}) };
+  for (const [k, id] of [['name','author_name'],['url','author_url'],['avatar','author_avatar']]) {
+    const v = $(id).value.trim(); if (v) author[k] = v; else delete author[k];
+  }
+  if (Object.keys(author).length) site.author = author; else delete site.author;
+  const social = { ...(loadedSite.social || {}) };
+  for (const [k, id] of [['github','social_github'],['twitter','social_twitter']]) {
+    const v = $(id).value.trim(); if (v) social[k] = v; else delete social[k];
+  }
+  if (Object.keys(social).length) site.social = social; else delete site.social;
+
+  let storage;
+  if (document.querySelector('input[name=provider]:checked').value === 'local') {
+    const local = { base_path: $('l_base_path').value.trim() };
+    const bu = strOrUndef('l_base_url'); if (bu) local.base_url = bu;
+    const ex = strOrUndef('l_exclude'); if (ex) local.exclude_regex = ex;
+    const mx = numOrUndef('l_max'); if (mx !== undefined) local.max_file_limit = mx;
+    storage = { local };
+  } else {
+    const s3 = { bucket: $('s3_bucket').value.trim(), access_key_id: $('s3_ak').value.trim(), secret_access_key: $('s3_sk').value };
+    const reg = strOrUndef('s3_region'); if (reg) s3.region = reg;
+    for (const [k, id] of [['endpoint','s3_endpoint'],['session_token','s3_session'],['prefix','s3_prefix'],['custom_domain','s3_cdn']]) {
+      const v = strOrUndef(id); if (v) s3[k] = v;
+    }
+    const dc = numOrUndef('s3_dc'); if (dc !== undefined) s3.download_concurrency = dc;
+    storage = { s3 };
+  }
+
+  const processing = {
+    concurrency: Number($('p_conc').value || 10),
+    thumbnail_width: Number($('p_tw').value || 600),
+    thumbnail_quality: Number($('p_tq').value || 100),
+    enable_live_photo: $('p_live').checked,
+  };
+  const exif = { exiftool_path: $('e_path').value.trim() || 'exiftool' };
+  const triggers = { poll_interval_secs: Number($('t_poll').value || 0), enable_s3_event: $('t_s3ev').checked };
+  const hook = strOrUndef('t_hook'); if (hook !== undefined) triggers.webhook_token = hook;
+
+  const geocoding = {
+    enabled: $('g_en').checked,
+    provider: $('g_provider').value,
+    nominatim_base_url: $('g_nomi').value.trim() || 'https://nominatim.openstreetmap.org',
+    cache_precision: Number($('g_prec').value || 4),
+  };
+  const gtok = strOrUndef('g_token'); if (gtok !== undefined) geocoding.mapbox_token = gtok;
+  const glang = strOrUndef('g_lang'); if (glang !== undefined) geocoding.language = glang;
+
+  const cfg = { storage, processing, exif, triggers, geocoding };
+  if (Object.keys(site).length) cfg.site = site;
+  return cfg;
+}
+
+async function saveConfig() {
+  msg('保存中…');
+  try {
+    const r = await fetch('/api/admin/config', {
+      method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildConfig()),
+    });
+    const text = await r.text();
+    if (r.ok) { msg('已保存并重载 ✓', 'text-green'); }
+    else { msg('失败：' + text, 'text-red'); }
+  } catch (e) { msg('网络错误：' + e, 'text-red'); }
+}
+
+async function triggerBuild(force) {
+  $('status').textContent = '已触发构建…';
+  try {
+    await fetch('/api/admin/build', {
+      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force }),
+    });
+    setTimeout(pollStatus, 800);
+  } catch (e) { $('status').textContent = '错误：' + e; }
+}
+
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/status');
+    if (!r.ok) return;
+    const s = await r.json();
+    const lr = s.last_result;
+    $('status').textContent = (s.running ? '构建中… ' : '') +
+      (lr ? `total=${lr.total} new=${lr.new_count} processed=${lr.processed_count} failed=${lr.failed_count}` : '尚未构建');
+    if (s.running) setTimeout(pollStatus, 1000);
+  } catch {}
+}
+</script>
+</body>
+</html>

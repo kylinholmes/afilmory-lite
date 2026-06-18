@@ -1,0 +1,16 @@
+{
+  "name": "afilmory-lite-admin-web",
+  "private": true,
+  "type": "module",
+  "description": "afilmory-lite 管理后台 /admin 页：用 Afilmory 同款 Tailwind v4 + uikit-colors 构建，产出自包含 admin_page.html 供 Rust include。",
+  "scripts": {
+    "dev": "bun dev.mjs",
+    "build": "node ./gen-font.mjs && tailwindcss -i ./src/styles.css -o ./dist/styles.css --minify && node ./build.mjs"
+  },
+  "devDependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@tailwindcss/cli": "4.3.1",
+    "tailwindcss": "4.3.1",
+    "tailwindcss-uikit-colors": "1.0.0"
+  }
+}

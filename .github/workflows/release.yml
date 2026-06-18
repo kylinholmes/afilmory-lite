@@ -40,10 +40,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux 固定用 ubuntu-22.04 构建：glibc 2.35（而非 ubuntu-latest=24.04 的 2.39），
+          # 让二进制能跑在更老的发行版（22.04 / Debian 12 等）；strukturag PPA 同样支持 22.04。
           # HEIC 仅在 amd64-linux 启用：用 strukturag PPA 装 libheif≥1.18（发行版自带的太旧）。
           # aarch64 为交叉编译、拿不到 arm64 的 PPA 库，故不含 HEIC。
-          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, features: heic }
-          - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04, features: heic }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04 }
           - { target: aarch64-apple-darwin, os: macos-14 }
           - { target: x86_64-pc-windows-msvc, os: windows-latest }
     runs-on: ${{ matrix.os }}
