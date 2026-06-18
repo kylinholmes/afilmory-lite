@@ -69,8 +69,7 @@ jobs:
         run: |
           sudo add-apt-repository -y ppa:strukturag/libheif
           sudo apt-get update
-          # libheif 的 pkg-config 传递依赖：libsharpyuv（libwebp）、libde265（HEVC 解码）
-          sudo apt-get install -y libheif-dev libsharpyuv-dev libde265-dev
+          sudo apt-get install -y libheif-dev libde265-dev
       - name: Build
         shell: bash
         run: |
