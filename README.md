@@ -1,71 +1,81 @@
-# afilmory-lite
+# Afilmory-lite
 
-afilmory-lite 是 [Afilmory](https://github.com/Afilmory/Afilmory) 照片画廊的单二进制常驻服务，以 Rust 实现。它托管预构建的 Afilmory 前端，并在进程内复刻其构建管线：从对象存储拉取照片，处理后生成 `manifest.json` 与缩略图。数据更新通过定时轮询、webhook、S3 事件或手动端点触发，以增量方式进行，无需重新构建前端。
+English · [简体中文](README.zh-CN.md)
 
-## 背景
+[![CI](https://github.com/kylinholmes/afilmory-lite/actions/workflows/release.yml/badge.svg)](https://github.com/kylinholmes/afilmory-lite/actions/workflows/release.yml)
+[![Release](https://img.shields.io/github/v/release/kylinholmes/afilmory-lite?sort=semver&logo=github)](https://github.com/kylinholmes/afilmory-lite/releases)
+[![Container](https://img.shields.io/badge/ghcr.io-afilmory--lite-2496ED?logo=docker&logoColor=white)](https://github.com/kylinholmes/afilmory-lite/pkgs/container/afilmory-lite)
+[![License](https://img.shields.io/github/license/kylinholmes/afilmory-lite)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/kylinholmes/afilmory-lite?logo=github)](https://github.com/kylinholmes/afilmory-lite/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/kylinholmes/afilmory-lite)](https://github.com/kylinholmes/afilmory-lite/commits/main)
+[![Visits](https://hits.sh/github.com/kylinholmes/afilmory-lite.svg?label=visits)](https://hits.sh/github.com/kylinholmes/afilmory-lite/)
 
-Afilmory 是自托管照片画廊。其默认更新流程在每次照片变更时需重新执行完整的 Node 构建（拉取 S3、生成 manifest 与缩略图、重新打包前端）并重新部署；在照片数量大、更新频繁的场景下成本较高。
+afilmory-lite is a single-binary daemon for the [Afilmory](https://github.com/Afilmory/Afilmory) photo gallery, written in Rust. It serves the prebuilt Afilmory frontend and reimplements its build pipeline in-process: pulling photos from object storage and processing them into `manifest.json` and thumbnails. Data updates are triggered by scheduled polling, webhooks, S3 events, or a manual endpoint, and run incrementally — with no frontend rebuild.
 
-afilmory-lite 将「前端构建」与「数据更新」解耦：
+## Background
 
-- 前端静态壳仅构建一次，数据改为运行时注入，不再内嵌；
-- 常驻 Rust 服务负责从存储拉取照片、处理、生成 manifest 与缩略图，并注入前端；
-- 数据更新由 webhook、轮询、S3 事件或手动端点触发，全程不涉及前端构建。
+Afilmory is a self-hosted photo gallery. Its default update flow re-runs a full Node build on every photo change (pull from S3, generate the manifest and thumbnails, repackage the frontend) and redeploys — which is costly when you have many photos or update frequently.
 
-部署产物为单个二进制，运行依赖 `exiftool`（HEIC 另需 `libheif`）；同时提供预构建 Docker 镜像。
+afilmory-lite decouples "frontend build" from "data update":
 
-## 架构
+- The static frontend shell is built once; data is injected at runtime rather than embedded.
+- A resident Rust service pulls photos from storage, processes them, generates the manifest and thumbnails, and injects them into the frontend.
+- Data updates are triggered by webhook, polling, S3 events, or a manual endpoint — never touching the frontend build.
+
+The deliverable is a single binary that depends on `exiftool` at runtime (plus `libheif` for HEIC); a prebuilt Docker image is also provided.
+
+## Architecture
 
 ```
-afilmory-lite（单进程）
-├─ server     serve 前端 dist + 运行时注入 __MANIFEST__/__SITE_CONFIG__ + SPA 路由回退 + 缓存头 + /thumbnails(+本地原图)
-├─ scheduler  轮询 / webhook / S3 事件 / 手动 → 去重串行的构建协调器
-├─ builder    列举存储 → 增量筛选 → 并发处理 → 写 manifest.json + thumbnails/
-├─ storage    S3 / S3 兼容（手写 SigV4）、本地目录
-├─ pipeline   解码(可选 HEIC) → 缩略图 → thumbHash → 影调 → HDR/Live/Motion Photo → 组装
-└─ exif       exiftool 子进程（EXIF 保真）
+afilmory-lite (single process)
+├─ server     serve frontend dist + runtime-inject __MANIFEST__/__SITE_CONFIG__ + SPA route fallback + cache headers + /thumbnails (+ local originals)
+├─ scheduler  polling / webhook / S3 event / manual → coalescing serial build coordinator
+├─ builder    list storage → incremental filter → concurrent processing → write manifest.json + thumbnails/
+├─ storage    S3 / S3-compatible (hand-written SigV4), local directory
+├─ pipeline   decode (optional HEIC) → thumbnail → thumbHash → tone → HDR/Live/Motion Photo → assemble
+└─ exif       exiftool subprocess (EXIF fidelity)
 ```
 
-原图不经过本服务：S3 模式下 `originalUrl` 直连存储桶或 CDN，本地模式由本服务托管。生成的 manifest 与上游保持结构与语义一致（字段结构、缩略图视觉、EXIF 显示值一致），不追求字节级相同。
+Originals do not pass through this service: in S3 mode `originalUrl` points directly at the bucket or CDN; in local mode the service hosts them. The generated manifest is structurally and semantically consistent with upstream (field structure, thumbnail appearance, EXIF display values), without aiming for byte-for-byte equality.
 
-## 快速开始（Docker Compose）
+## Quick start (Docker Compose)
 
-镜像包含程序、前端、`exiftool` 与 `libheif`。
+The image bundles the program, frontend, `exiftool`, and `libheif`.
 
 ```bash
 git clone https://github.com/kylinholmes/afilmory-lite
 cd afilmory-lite
 
-cp docker/afilmory.example.toml afilmory.toml   # 按需修改 [storage] / [site] / [triggers], 也可以进入网页进行配置，建议更新配置后 关闭配置入口
-mkdir -p data photos                            # data=持久化产物；photos=本地照片（使用 S3 时可省略）
+cp docker/afilmory.example.toml afilmory.toml   # edit [storage] / [site] / [triggers] as needed; you can also configure via the web page (closing the config entry after updating is recommended)
+mkdir -p data photos                            # data = persistent output; photos = local photos (omit when using S3)
 
 docker compose up -d
 docker compose logs -f
 ```
 
-服务启动后通过 `http://<host>:8080/` 访问。镜像发布于 `ghcr.io/kylinholmes/afilmory-lite`：`:main` 为主干滚动构建，打 `v*` tag 后提供 `:latest` 与 `:x.y.z`。
+Once started, open `http://<host>:8080/`. Images are published at `ghcr.io/kylinholmes/afilmory-lite`: `:main` is the rolling build of the main branch; pushing a `v*` tag additionally provides `:latest` and `:x.y.z`.
 
-## 配置
+## Configuration
 
-配置为 TOML 格式，完整示例见 [`docker/afilmory.example.toml`](docker/afilmory.example.toml)。
+Configuration is TOML; see [`docker/afilmory.example.toml`](docker/afilmory.example.toml) for a complete example.
 
-| 段 | 字段 | 说明 |
+| Section | Field | Description |
 |---|---|---|
-| `[server]` | `listen` | 监听地址，默认 `0.0.0.0:8080` |
-| | `workdir` | 存放 `manifest.json` 与 `thumbnails/`（需持久化） |
-| | `dist_dir` | 前端静态壳目录（Docker 内置为 `/app/web/dist`） |
-| | `admin_token` | 设置后启用 `/admin` 配置页与配置读写接口（Bearer 鉴权），运行时热重载 |
-| `[site]` | `name` / `title` / `description` / `accentColor` / … | 注入 `window.__SITE_CONFIG__`（站点信息） |
-| `[storage.local]` | `base_path` / `base_url` | 本地目录；`base_url` 为根路径（如 `/photos`）时由本服务托管原图 |
-| `[storage.s3]` | `bucket` / `region` / `endpoint` / `access_key_id` / `secret_access_key` / `prefix` / `custom_domain` … | S3 及兼容服务（AWS / MinIO / Cloudflare R2 / Wasabi）|
-| `[processing]` | `concurrency` / `thumbnail_width`(600) / `thumbnail_quality`(100) / `enable_live_photo` | 处理参数 |
-| `[exif]` | `exiftool_path` | exiftool 可执行路径（默认 `exiftool`） |
-| `[triggers]` | `poll_interval_secs` | 大于 0 时启用定时轮询 |
-| | `webhook_token` | 设置后启用 `/api/hooks/build` 与 `/api/admin/build`（Bearer 鉴权） |
-| | `enable_s3_event` | 启用 `/api/hooks/s3` |
-| `[geocoding]` | `enabled` / `provider` / `mapbox_token` / `nominatim_base_url` / `language` / `cache_precision` | GPS 反查城市与国家，写入 `location`；默认关闭。`provider=auto` 时有 token 用 Mapbox，否则用 Nominatim |
+| `[server]` | `listen` | Listen address, default `0.0.0.0:8080` |
+| | `workdir` | Holds `manifest.json` and `thumbnails/` (must be persisted) |
+| | `dist_dir` | Frontend static-shell directory (built into Docker at `/app/web/dist`) |
+| | `admin_token` | When set, enables the `/admin` config page and config read/write API (Bearer auth), with runtime hot reload |
+| `[site]` | `name` / `title` / `description` / `accentColor` / … | Injected into `window.__SITE_CONFIG__` (site info) |
+| `[storage.local]` | `base_path` / `base_url` | Local directory; when `base_url` is a root path (e.g. `/photos`), the service hosts the originals |
+| `[storage.s3]` | `bucket` / `region` / `endpoint` / `access_key_id` / `secret_access_key` / `prefix` / `custom_domain` … | S3 and compatible services (AWS / MinIO / Cloudflare R2 / Wasabi) |
+| `[processing]` | `concurrency` / `thumbnail_width`(600) / `thumbnail_quality`(100) / `enable_live_photo` | Processing parameters |
+| `[exif]` | `exiftool_path` | Path to the exiftool executable (default `exiftool`) |
+| `[triggers]` | `poll_interval_secs` | Enables scheduled polling when greater than 0 |
+| | `webhook_token` | When set, enables `/api/hooks/build` and `/api/admin/build` (Bearer auth) |
+| | `enable_s3_event` | Enables `/api/hooks/s3` |
+| `[geocoding]` | `enabled` / `provider` / `mapbox_token` / `nominatim_base_url` / `language` / `cache_precision` | Reverse-geocode GPS to city/country, written to `location`; disabled by default. With `provider=auto`, uses Mapbox when a token is set, otherwise Nominatim |
 
-最小示例（本地照片）：
+Minimal example (local photos):
 
 ```toml
 [server]
@@ -83,43 +93,43 @@ base_path = "./photos"
 base_url = "/photos"
 ```
 
-在线配置（`/admin`）：设置 `[server].admin_token` 后，通过 `http://<host>:8080/admin` 在线编辑配置并热重载——除 `listen`（需重启）外即时生效。底层接口为 `GET` / `PUT /api/admin/config`（Bearer admin token 鉴权，因配置含密钥）。
+Online configuration (`/admin`): after setting `[server].admin_token`, edit the config online at `http://<host>:8080/admin` with hot reload — everything takes effect immediately except `listen` (which requires a restart). The underlying API is `GET` / `PUT /api/admin/config` (Bearer admin token, since the config contains secrets).
 
-## 使用
+## Usage
 
-CLI 提供两个子命令：
+The CLI provides two subcommands:
 
 ```bash
-afilmory-lite build --config afilmory.toml          # 执行一次构建（增量；--force 全量）
-afilmory-lite serve --config afilmory.toml          # 启动常驻服务（启动时执行一次增量构建）
+afilmory-lite build --config afilmory.toml          # run one build (incremental; --force for a full rebuild)
+afilmory-lite serve --config afilmory.toml          # start the resident service (runs one incremental build on startup)
 ```
 
+## Deployment
 
-## 部署
+- **Docker Compose (recommended)**: see Quick start. Update the image: `docker compose pull && docker compose up -d`.
+- **Release tarball**: download `afilmory-lite-<target>.tar.gz` from [Releases](https://github.com/kylinholmes/afilmory-lite/releases), containing the program, `afilmory.example.toml`, and `web/dist/`. After extracting, point `dist_dir` at `web/dist`, finish the configuration, and run `./afilmory-lite serve --config afilmory.toml` (can be kept resident with systemd).
 
-- **Docker Compose（推荐）**：见「快速开始」。更新镜像：`docker compose pull && docker compose up -d`。
-- **Release tar 包**：从 [Releases](https://github.com/kylinholmes/afilmory-lite/releases) 下载 `afilmory-lite-<target>.tar.gz`，内含程序、`afilmory.example.toml` 与 `web/dist/`。解压后将 `dist_dir` 指向 `web/dist`，完成配置后执行 `./afilmory-lite serve --config afilmory.toml`（可结合 systemd 常驻）。
+Release artifacts:
 
-发布产物：
+- Docker image: `ghcr.io/kylinholmes/afilmory-lite` (amd64 / arm64 multi-arch).
+- Tarball: generated by CI and attached to the GitHub Release when a `v*` tag is pushed.
 
-- Docker 镜像：`ghcr.io/kylinholmes/afilmory-lite`（amd64 / arm64 多架构）。
-- Tar 包：打 `v*` tag 时由 CI 生成并附加至 GitHub Release。
+## Feature status
 
-## 功能状态
-
-| 能力 | 状态 |
+| Capability | Status |
 |---|---|
-| Builder 核心（存储 → manifest + 缩略图） | ✅ |
-| Server 与四类触发器（常驻 daemon） | ✅ |
-| S3 及 S3 兼容存储（手写 SigV4） | ✅ |
-| 本地目录存储（含原图托管） | ✅ |
+| Builder core (storage → manifest + thumbnails) | ✅ |
+| Server and four trigger types (resident daemon) | ✅ |
+| S3 and S3-compatible storage (hand-written SigV4) | ✅ |
+| Local directory storage (incl. original hosting) | ✅ |
 | HDR / Live Photo / Motion Photo | ✅ |
-| HEIC（`heic` feature / libheif ≥ 1.18） | amd64 ✅（CI 与运行镜像经 strukturag PPA 启用）；arm64 暂不支持 |
+| HEIC (`heic` feature / libheif ≥ 1.18) | amd64 ✅ (enabled in CI and the runtime image via the strukturag PPA); arm64 not yet supported |
 
-设计文档见 [`docs/`](docs/)（上游功能盘点与各阶段 spec/plan）。
+Design docs live under [`docs/`](docs/) (upstream feature inventory and per-stage specs/plans).
 
-## 上游与许可
+## Upstream and license
 
-- 前端静态壳在构建时从上游 Afilmory 仓库拉取并编译，本项目不修改其源码。
-- 仓库内的 `afilmory-main/`（若存在）为上游只读拷贝，经 `pull` 更新，不纳入版本控制。
-- Afilmory 的许可见其[上游仓库](https://github.com/Afilmory/Afilmory)。
+- This project (afilmory-lite) is licensed under the [MIT License](LICENSE).
+- The static frontend shell is pulled from the upstream Afilmory repository and compiled at build time; this project does not modify its source.
+- An `afilmory-main/` directory in the repo (if present) is a read-only copy of upstream, updated via `pull` and not tracked in version control.
+- For Afilmory's license, see its [upstream repository](https://github.com/Afilmory/Afilmory).

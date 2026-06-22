@@ -24,16 +24,16 @@ enum Command {
     /// 从存储构建 manifest 与缩略图（默认增量更新）
     Build {
         /// 配置文件路径
-        #[arg(long, default_value = "afilmory.toml")]
+        #[arg(short, long, default_value = "afilmory.toml")]
         config: PathBuf,
         /// 强制全量重建（忽略已有 manifest 与缩略图）
-        #[arg(long)]
+        #[arg(short, long)]
         force: bool,
     },
     /// 启动常驻服务：serve 预构建 SPA + 运行时注入数据 + 触发器（轮询/webhook/S3 事件/手动）
     Serve {
         /// 配置文件路径
-        #[arg(long, default_value = "afilmory.toml")]
+        #[arg(short, long, default_value = "afilmory.toml")]
         config: PathBuf,
     },
 }
