@@ -10,7 +10,7 @@
 
 <!-- 固定顶栏：左标题/状态，右上角唯一动作=保存（颜色随 accentColor）-->
 <header class="sticky top-0 z-20 border-b border-fill-tertiary bg-background/85 backdrop-blur-md">
-  <div class="mx-auto flex h-14 max-w-4xl items-center justify-between gap-4 px-6">
+  <div class="mx-auto flex h-14 max-w-[88rem] items-center justify-between gap-4 px-6">
     <div class="flex min-w-0 items-baseline gap-2">
       <span class="font-semibold tracking-tight">afilmory-lite</span>
       <span class="text-sm text-text-tertiary">配置</span>
@@ -25,10 +25,14 @@
   </div>
 </header>
 
-<main class="mx-auto max-w-4xl px-6 py-8">
-  <div id="gate" class="py-28 text-center text-sm text-text-tertiary">输入 admin token 后回车，载入配置</div>
+<main class="mx-auto max-w-[88rem] px-6 py-8">
+  <div id="banner" class="mb-4 hidden whitespace-pre-wrap break-words border border-red bg-fill-secondary px-3 py-2 text-xs text-red rounded-[var(--ui-radius)]"></div>
 
-  <form id="form" class="hidden columns-2 gap-4">
+  <div id="gate" class="py-28 text-center text-sm text-text-tertiary">
+    请在<span class="text-text">右上角 ↗</span>输入 admin token，回车载入配置
+  </div>
+
+  <form id="form" class="hidden columns-1 gap-4 sm:columns-2 lg:columns-3">
     <!-- Site -->
     <section class="mb-4 break-inside-avoid">
       <h2 class="mb-1.5 px-0.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Site</h2>
@@ -77,21 +81,25 @@
           </div>
         </div>
         <div id="local-fields" class="group">
-          <div class="row"><label>base_path</label><input id="l_base_path" class="field" /></div>
+          <div class="row"><label>base_path<span class="req">*</span></label><input id="l_base_path" class="field" /></div>
           <div class="row"><label>base_url</label><input id="l_base_url" placeholder="/photos" class="field" /></div>
           <div class="row"><label>exclude_regex</label><input id="l_exclude" class="field" /></div>
           <div class="row"><label>max_file_limit</label><input id="l_max" type="number" class="field" /></div>
         </div>
         <div id="s3-fields" class="group hidden">
-          <div class="row"><label>bucket</label><input id="s3_bucket" class="field" /></div>
-          <div class="row"><label>region</label><input id="s3_region" placeholder="us-east-1" class="field" /></div>
-          <div class="row"><label>endpoint</label><input id="s3_endpoint" placeholder="MinIO/R2 填" class="field" /></div>
-          <div class="row"><label>access_key_id</label><input id="s3_ak" class="field" /></div>
-          <div class="row"><label>secret_access_key</label><input id="s3_sk" type="password" class="field" /></div>
+          <div class="row"><label>bucket<span class="req">*</span></label><input id="s3_bucket" class="field" /></div>
+          <div class="row"><label>access_key_id<span class="req">*</span></label><input id="s3_ak" class="field" /></div>
+          <div class="row"><label>secret_access_key<span class="req">*</span></label><input id="s3_sk" type="password" class="field" /></div>
+          <div class="row"><label>region</label><input id="s3_region" class="field" /></div>
+          <div class="row"><label>endpoint</label><input id="s3_endpoint" placeholder="S3 兼容服务必填，AWS 留空" class="field" /></div>
           <div class="row"><label>session_token</label><input id="s3_session" class="field" /></div>
           <div class="row"><label>prefix</label><input id="s3_prefix" class="field" /></div>
           <div class="row"><label>custom_domain</label><input id="s3_cdn" class="field" /></div>
-          <div class="row"><label>download_concurrency</label><input id="s3_dc" type="number" placeholder="16" class="field" /></div>
+          <div class="row"><label>download_concurrency</label><input id="s3_dc" type="number" class="field" /></div>
+          <div class="flex items-center gap-2 px-3.5 py-2.5">
+            <button type="button" onclick="testStorage()" class="btn-ghost">测试连接</button>
+            <span id="s3_test" class="text-xs text-text-tertiary"></span>
+          </div>
         </div>
       </div>
     </section>
@@ -131,13 +139,13 @@
       <div class="card">
         <div class="row"><label>enabled</label><input id="g_en" type="checkbox" class="size-[18px] accent-accent" /></div>
         <div class="row"><label>provider</label>
-          <select id="g_provider" class="field">
+          <select id="g_provider" class="field" onchange="toggleGeoReq()">
             <option value="auto">auto</option>
             <option value="mapbox">mapbox</option>
             <option value="nominatim">nominatim</option>
           </select>
         </div>
-        <div class="row"><label>mapbox_token</label><input id="g_token" type="password" placeholder="auto 时有则用 Mapbox" class="field" /></div>
+        <div class="row"><label>mapbox_token<span id="g_token_req" class="req hidden">*</span></label><input id="g_token" type="password" placeholder="auto 时有则用 Mapbox" class="field" /></div>
         <div class="row"><label>nominatim_base_url</label><input id="g_nomi" class="field" /></div>
         <div class="row"><label>language</label><input id="g_lang" placeholder="zh / en，可空" class="field" /></div>
         <div class="row"><label>cache_precision</label><input id="g_prec" type="number" class="field" /></div>
@@ -176,6 +184,9 @@ function applyAccent(v) {
 
 function showForm() { $('gate').classList.add('hidden'); $('form').classList.remove('hidden'); $('saveBtn').classList.remove('hidden'); }
 
+// provider=mapbox 时 mapbox_token 实为必填（否则静默回退/关闭），动态显隐其 * 标记
+function toggleGeoReq() { $('g_token_req').classList.toggle('hidden', $('g_provider').value !== 'mapbox'); }
+
 // dev 预览：?demo=1 用示例数据展开整个表单（无需后端），用于查看样式
 function demoFill() {
   fillForm({
@@ -193,9 +204,12 @@ function demoFill() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  // 编辑任一字段即清除其必填高亮
+  $('form').addEventListener('input', (e) => e.target.classList?.remove('field-error'));
   if (new URLSearchParams(location.search).has('demo')) { demoFill(); return; }
   const saved = localStorage.getItem(TOKEN_KEY);
   if (saved) { $('token').value = saved; loadConfig(); }
+  else { $('token').focus(); }
 });
 
 function toggleProvider() {
@@ -261,6 +275,32 @@ function fillForm(c) {
   $('g_token').value = g.mapbox_token ?? ''; $('g_nomi').value = g.nominatim_base_url ?? 'https://nominatim.openstreetmap.org';
   $('g_lang').value = g.language ?? ''; $('g_prec').value = g.cache_precision ?? 4;
   toggleProvider();
+  toggleGeoReq();
+}
+
+// 顶部错误横幅（完整、可换行展示后端错误详情；header 的 #msg 会被截断）
+function banner(text) {
+  const b = $('banner');
+  if (!text) { b.classList.add('hidden'); b.textContent = ''; return; }
+  b.textContent = text; b.classList.remove('hidden');
+}
+
+// 由当前表单（未保存）组装 storage 配置（StorageConfig 形状）；buildConfig 与「测试连接」共用
+function buildStorage() {
+  if (document.querySelector('input[name=provider]:checked').value === 'local') {
+    const local = { base_path: $('l_base_path').value.trim() };
+    const bu = strOrUndef('l_base_url'); if (bu) local.base_url = bu;
+    const ex = strOrUndef('l_exclude'); if (ex) local.exclude_regex = ex;
+    const mx = numOrUndef('l_max'); if (mx !== undefined) local.max_file_limit = mx;
+    return { local };
+  }
+  const s3 = { bucket: $('s3_bucket').value.trim(), access_key_id: $('s3_ak').value.trim(), secret_access_key: $('s3_sk').value };
+  const reg = strOrUndef('s3_region'); if (reg) s3.region = reg;
+  for (const [k, id] of [['endpoint','s3_endpoint'],['session_token','s3_session'],['prefix','s3_prefix'],['custom_domain','s3_cdn']]) {
+    const v = strOrUndef(id); if (v) s3[k] = v;
+  }
+  const dc = numOrUndef('s3_dc'); if (dc !== undefined) s3.download_concurrency = dc;
+  return { s3 };
 }
 
 function buildConfig() {
@@ -279,22 +319,7 @@ function buildConfig() {
   }
   if (Object.keys(social).length) site.social = social; else delete site.social;
 
-  let storage;
-  if (document.querySelector('input[name=provider]:checked').value === 'local') {
-    const local = { base_path: $('l_base_path').value.trim() };
-    const bu = strOrUndef('l_base_url'); if (bu) local.base_url = bu;
-    const ex = strOrUndef('l_exclude'); if (ex) local.exclude_regex = ex;
-    const mx = numOrUndef('l_max'); if (mx !== undefined) local.max_file_limit = mx;
-    storage = { local };
-  } else {
-    const s3 = { bucket: $('s3_bucket').value.trim(), access_key_id: $('s3_ak').value.trim(), secret_access_key: $('s3_sk').value };
-    const reg = strOrUndef('s3_region'); if (reg) s3.region = reg;
-    for (const [k, id] of [['endpoint','s3_endpoint'],['session_token','s3_session'],['prefix','s3_prefix'],['custom_domain','s3_cdn']]) {
-      const v = strOrUndef(id); if (v) s3[k] = v;
-    }
-    const dc = numOrUndef('s3_dc'); if (dc !== undefined) s3.download_concurrency = dc;
-    storage = { s3 };
-  }
+  const storage = buildStorage();
 
   const processing = {
     concurrency: Number($('p_conc').value || 10),
@@ -320,7 +345,50 @@ function buildConfig() {
   return cfg;
 }
 
+// 当前 provider 下缺失的硬必填 storage 字段 id 列表
+function validateStorage() {
+  const miss = [];
+  if (document.querySelector('input[name=provider]:checked').value === 'local') {
+    if (!$('l_base_path').value.trim()) miss.push('l_base_path');
+  } else {
+    for (const id of ['s3_bucket', 's3_ak', 's3_sk']) if (!$(id).value.trim()) miss.push(id);
+  }
+  return miss;
+}
+
+// 保存前校验硬必填项（缺了后端会反序列化失败）：storage + geocoding 条件必填
+function validateRequired() {
+  document.querySelectorAll('.field-error').forEach((el) => el.classList.remove('field-error'));
+  const miss = validateStorage();
+  if ($('g_en').checked && $('g_provider').value === 'mapbox' && !$('g_token').value.trim()) miss.push('g_token');
+  miss.forEach((id) => $(id).classList.add('field-error'));
+  if (miss.length) { $(miss[0]).focus(); msg('请填写必填项（标 * 的）', 'text-red'); }
+  return miss.length === 0;
+}
+
+// 测试存储连接：用当前（未保存）表单值打后端 /api/admin/test-storage
+function s3test(text, cls) { const t = $('s3_test'); t.textContent = text; t.className = 'text-xs ' + (cls || 'text-text-tertiary'); }
+async function testStorage() {
+  document.querySelectorAll('.field-error').forEach((el) => el.classList.remove('field-error'));
+  const miss = validateStorage();
+  if (miss.length) { miss.forEach((id) => $(id).classList.add('field-error')); $(miss[0]).focus(); s3test('请先填写必填项（标 * 的）', 'text-red'); return; }
+  s3test('测试中…');
+  try {
+    const r = await fetch('/api/admin/test-storage', {
+      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildStorage()),
+    });
+    if (r.status === 401) { s3test('token 失效，请重新载入', 'text-red'); return; }
+    if (r.status === 404) { s3test('管理接口已关闭', 'text-red'); return; }
+    const data = await r.json().catch(() => null);
+    if (data && data.ok) s3test(`✓ 连接成功，列出 ${data.count} 张图片`, 'text-green');
+    else s3test('✗ ' + ((data && data.error) || ('HTTP ' + r.status)), 'text-red');
+  } catch (e) { s3test('✗ 网络错误：' + e, 'text-red'); }
+}
+
 async function saveConfig() {
+  if (!validateRequired()) return;
+  banner('');
   msg('保存中…');
   try {
     const r = await fetch('/api/admin/config', {
@@ -328,9 +396,9 @@ async function saveConfig() {
       body: JSON.stringify(buildConfig()),
     });
     const text = await r.text();
-    if (r.ok) { msg('已保存并重载 ✓', 'text-green'); }
-    else { msg('失败：' + text, 'text-red'); }
-  } catch (e) { msg('网络错误：' + e, 'text-red'); }
+    if (r.ok) { banner(''); msg('已保存并重载 ✓', 'text-green'); }
+    else { msg('保存失败', 'text-red'); banner(`保存失败（HTTP ${r.status}）：${text}`); }
+  } catch (e) { msg('网络错误', 'text-red'); banner('网络错误：' + e); }
 }
 
 async function triggerBuild(force) {

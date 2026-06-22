@@ -9,7 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 
-use crate::config::Config;
+use crate::config::{Config, StorageConfig};
 use crate::scheduler::BuildCoordinator;
 use crate::state::AppState;
 
@@ -24,6 +24,7 @@ pub fn build_router(state: AppState, coord: BuildCoordinator) -> Router {
         .route("/api/status", get(api_status))
         .route("/api/admin/build", post(api_admin_build))
         .route("/api/admin/config", get(api_get_config).put(api_put_config))
+        .route("/api/admin/test-storage", post(api_test_storage))
         .route("/api/hooks/build", post(api_hook_build))
         .route("/api/hooks/s3", post(api_hook_s3))
         .route("/admin", get(admin_page))
@@ -260,6 +261,48 @@ async fn api_put_config(
             .into_response();
     }
     (StatusCode::OK, "reloaded").into_response()
+}
+
+/// 测试存储连接：用请求体里的（未保存的）storage 配置建 provider 并试列举一次，
+/// 返回 `{ok:true,count}` 或 `{ok:false,error}`（连接失败也回 200，便于前端读取详情）。
+async fn api_test_storage(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    body: Option<Json<serde_json::Value>>,
+) -> Response {
+    let cfg = st.config().await;
+    match check_bearer(cfg.server.admin_token.as_deref(), &headers) {
+        None => return StatusCode::NOT_FOUND.into_response(),
+        Some(false) => return StatusCode::UNAUTHORIZED.into_response(),
+        Some(true) => {}
+    }
+    let Some(Json(v)) = body else {
+        return (StatusCode::BAD_REQUEST, "missing storage body").into_response();
+    };
+    let storage: StorageConfig = match serde_json::from_value(v) {
+        Ok(s) => s,
+        Err(e) => {
+            return Json(serde_json::json!({"ok": false, "error": format!("配置无效：{e}")}))
+                .into_response();
+        }
+    };
+    let provider = match crate::storage::build_provider(&storage) {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(serde_json::json!({"ok": false, "error": format!("初始化失败：{e}")}))
+                .into_response();
+        }
+    };
+    match provider.list_images().await {
+        Ok(objs) => {
+            tracing::info!(count = objs.len(), "存储测试连接成功");
+            Json(serde_json::json!({"ok": true, "count": objs.len()})).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "存储测试连接失败");
+            Json(serde_json::json!({"ok": false, "error": format!("{e}")})).into_response()
+        }
+    }
 }
 
 /// Bearer 鉴权：None=端点禁用（未配置 token）；Some(true)=通过；Some(false)=拒绝。

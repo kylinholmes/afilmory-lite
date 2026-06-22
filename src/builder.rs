@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use tokio::sync::{Mutex, Semaphore};
 
-use crate::config::{Config, StorageConfig};
+use crate::config::Config;
 use crate::error::Result;
 use crate::exif::{ExifExtractor, ExiftoolExtractor};
 use crate::manifest::{
     PhotoManifestItem, filter_tasks, handle_deleted, load_manifest, save_manifest,
 };
 use crate::pipeline::{Geocoder, PipelineDeps, process_photo};
-use crate::storage::{LocalProvider, S3Provider, StorageProvider, detect_live_photos};
+use crate::storage::{StorageProvider, detect_live_photos};
 
 #[derive(Default)]
 pub struct BuildOptions {
@@ -39,44 +39,7 @@ pub struct Builder {
 
 impl Builder {
     pub fn from_config(config: Config) -> Result<Self> {
-        let storage: Arc<dyn StorageProvider> = match &config.storage {
-            StorageConfig::Local {
-                base_path,
-                base_url,
-                exclude_regex,
-                max_file_limit,
-            } => Arc::new(LocalProvider::new(
-                base_path.clone(),
-                base_url.clone(),
-                exclude_regex.clone(),
-                *max_file_limit,
-            )?),
-            StorageConfig::S3 {
-                bucket,
-                region,
-                endpoint,
-                access_key_id,
-                secret_access_key,
-                session_token,
-                prefix,
-                custom_domain,
-                exclude_regex,
-                max_file_limit,
-                download_concurrency,
-            } => Arc::new(S3Provider::new(
-                bucket.clone(),
-                region.clone(),
-                endpoint.clone(),
-                access_key_id.clone(),
-                secret_access_key.clone(),
-                session_token.clone(),
-                prefix.clone(),
-                custom_domain.clone(),
-                exclude_regex.clone(),
-                *max_file_limit,
-                *download_concurrency,
-            )?),
-        };
+        let storage = crate::storage::build_provider(&config.storage)?;
         let exif: Arc<dyn ExifExtractor> =
             Arc::new(ExiftoolExtractor::new(config.exif.exiftool_path.clone()));
         let workdir = config.server.workdir.clone();

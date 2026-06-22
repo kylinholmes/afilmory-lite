@@ -19,6 +19,12 @@
 @layer base {
   html {
     color-scheme: dark;
+    scrollbar-width: none; /* Firefox：隐藏滚动条（仍可滚动）*/
+  }
+  /* Chromium/WebKit：隐藏滚动条 */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
   }
 }
 
@@ -33,7 +39,11 @@
     @apply divide-y divide-fill-tertiary/60;
   }
   .row {
-    @apply grid grid-cols-[116px_1fr] items-center gap-3 px-3.5 py-2;
+    @apply grid grid-cols-[168px_1fr] items-center gap-3 px-3.5 py-2;
+  }
+  /* 长 key（如 download_concurrency）也不换行/不截断，靠加宽的 label 列容纳 */
+  .row > label {
+    @apply whitespace-nowrap;
   }
   .row > label {
     @apply text-sm text-text-secondary;
@@ -43,6 +53,18 @@
     @apply w-full border border-fill-tertiary bg-background px-3 py-2 text-sm text-text outline-none transition;
     @apply placeholder:text-text-tertiary/60 focus:border-accent/50 focus:ring-2 focus:ring-accent/40;
     border-radius: var(--ui-radius);
+  }
+  /* 必填标记：强调色星号（跟随 accentColor）*/
+  .req {
+    @apply ml-0.5 select-none text-accent;
+  }
+  /* 必填校验未通过时的输入框高亮（保存前校验加上，输入时清除）。
+     border 用 border-red 即可（编译成 rgb(var(--color-red))，运行时 = 该 palette 三元组）。
+     ring 不能用 var(--color-red)：Tailwind v4 会把它内联成主题色 rgb(var(--color-red))，
+     再被 rgb() 包一层成 rgb(rgb(...)) 而失效，故直接写死该 palette 的 dark red(#ff453a)。*/
+  .field-error {
+    @apply border-red ring-2;
+    --tw-ring-color: color-mix(in srgb, #ff453a 45%, transparent);
   }
   /* Afilmory Button 同款 */
   .btn-primary {

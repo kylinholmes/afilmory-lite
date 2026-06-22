@@ -326,6 +326,9 @@ impl S3Provider {
                 let body = resp.text().await.unwrap_or_default();
                 return Err(Error::Storage(format!("s3 list failed: {code} {body}")));
             }
+            if token.is_none() {
+                tracing::info!(host = %self.host, status = %resp.status(), "S3 已连接");
+            }
             let xml = resp
                 .text()
                 .await

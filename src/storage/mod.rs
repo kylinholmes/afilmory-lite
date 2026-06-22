@@ -4,10 +4,13 @@ mod sigv4;
 pub use local::LocalProvider;
 pub use s3::S3Provider;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 
+use crate::config::StorageConfig;
 use crate::error::Result;
 
 pub const IMAGE_EXTS: &[&str] = &[
@@ -37,6 +40,49 @@ pub trait StorageProvider: Send + Sync {
     async fn list_all_files(&self) -> Result<Vec<StorageObject>>;
     async fn get_file(&self, key: &str) -> Result<Option<Bytes>>;
     fn generate_public_url(&self, key: &str) -> String;
+}
+
+/// 从配置构建存储 provider（Builder 与「测试连接」端点共用）。
+pub fn build_provider(cfg: &StorageConfig) -> Result<Arc<dyn StorageProvider>> {
+    let provider: Arc<dyn StorageProvider> = match cfg {
+        StorageConfig::Local {
+            base_path,
+            base_url,
+            exclude_regex,
+            max_file_limit,
+        } => Arc::new(LocalProvider::new(
+            base_path.clone(),
+            base_url.clone(),
+            exclude_regex.clone(),
+            *max_file_limit,
+        )?),
+        StorageConfig::S3 {
+            bucket,
+            region,
+            endpoint,
+            access_key_id,
+            secret_access_key,
+            session_token,
+            prefix,
+            custom_domain,
+            exclude_regex,
+            max_file_limit,
+            download_concurrency,
+        } => Arc::new(S3Provider::new(
+            bucket.clone(),
+            region.clone(),
+            endpoint.clone(),
+            access_key_id.clone(),
+            secret_access_key.clone(),
+            session_token.clone(),
+            prefix.clone(),
+            custom_domain.clone(),
+            exclude_regex.clone(),
+            *max_file_limit,
+            *download_concurrency,
+        )?),
+    };
+    Ok(provider)
 }
 
 pub const VIDEO_EXTS: &[&str] = &["mov", "mp4"];
