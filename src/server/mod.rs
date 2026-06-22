@@ -36,6 +36,11 @@ pub fn build_router(state: AppState, coord: BuildCoordinator) -> Router {
 // ---- 静态资源 / 首页注入 / 本地原图 ----
 
 async fn serve_static(State(st): State<AppState>, AxPath(path): AxPath<String>) -> Response {
+    // 不经 /static 暴露 index.html 原始模板（含未填充的 `<%- ... %>` 占位符）；
+    // HTML 文档只能从 `/`（→ render_index 注入处理后）获取。
+    if path == "index.html" || path.ends_with("/index.html") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let cfg = st.config().await;
     serve_file(&cfg.server.dist_dir, &path).await
 }
@@ -94,13 +99,16 @@ async fn render_index(st: &AppState) -> Response {
     };
     let site_json = serde_json::to_string(&cfg.site).unwrap_or_else(|_| "{}".into());
     let (title, description) = site_title_desc(&cfg.site);
+    // 未配置 title 时给兜底（否则 <title>/splash 会空白）；description 缺省为空串。
+    let title = title.unwrap_or_else(|| "Afilmory".to_string());
+    let description = description.unwrap_or_default();
     let injected = inject(
         &html,
         &manifest_json,
         "{}",
         &site_json,
-        title.as_deref(),
-        description.as_deref(),
+        Some(&title),
+        Some(&description),
     );
     (
         [
@@ -113,7 +121,12 @@ async fn render_index(st: &AppState) -> Response {
 }
 
 fn site_title_desc(site: &serde_json::Value) -> (Option<String>, Option<String>) {
-    let t = site.get("title").and_then(|v| v.as_str()).map(String::from);
+    // title 缺省回退到站点 name（与上游一致：name 即站点名）
+    let t = site
+        .get("title")
+        .and_then(|v| v.as_str())
+        .or_else(|| site.get("name").and_then(|v| v.as_str()))
+        .map(String::from);
     let d = site
         .get("description")
         .and_then(|v| v.as_str())
@@ -407,6 +420,19 @@ mod tests {
 
         let resp = app
             .oneshot(Request::builder().uri("/missing.css").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn static_index_html_is_404() {
+        // index.html 原始模板不得经 /static 暴露（含未填充的 <%- ... %> 占位符）
+        let (_dir, state) = setup(None);
+        let coord = BuildCoordinator::start(state.clone());
+        let app = build_router(state, coord);
+        let resp = app
+            .oneshot(Request::builder().uri("/static/web/index.html").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
